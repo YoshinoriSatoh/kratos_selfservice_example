@@ -110,11 +110,16 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, ctxRemoteAddr{}, r.RemoteAddr)
 		ctx = context.WithValue(ctx, ctxCookie{}, r.Header.Get("Cookie"))
 
-		session, err := p.d.Kratos.Whoami(ctx, w, r)
-		if err != nil || session == nil {
+		whoamiResp, err := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
+			Header: kratos.KratosRequestHeader{
+				Cookie:   r.Header.Get("Cookie"),
+				ClientIP: r.RemoteAddr,
+			},
+		})
+		if err != nil || whoamiResp.Session == nil {
 			ctx = context.WithValue(ctx, ctxSession{}, nil)
 		} else {
-			ctx = context.WithValue(ctx, ctxSession{}, *session)
+			ctx = context.WithValue(ctx, ctxSession{}, *whoamiResp.Session)
 		}
 
 		slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path)

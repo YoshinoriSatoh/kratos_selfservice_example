@@ -104,6 +104,14 @@ type VerificationFlow struct {
 	CsrfToken string
 }
 
+func (f *VerificationFlow) IsUsedFlow() bool {
+	if f.State == "passed_challenge" {
+		return true
+	} else {
+		return false[]
+	}
+}
+
 type LoginFlow struct {
 	FlowID              string
 	PasskeyChallenge    string
@@ -111,28 +119,14 @@ type LoginFlow struct {
 	DuplicateIdentifier string
 }
 
-type UpdateLoginFlowResponse struct {
-	RedirectBrowserTo string
-}
-
 type RecoveryFlow struct {
 	FlowID    string
 	CsrfToken string
 }
 
-type UpdateRecoveryFlowResponse struct {
-	Flow              RecoveryFlow
-	RedirectBrowserTo string
-}
-
 type SettingsFlow struct {
 	FlowID    string
 	CsrfToken string
-}
-
-type UpdateSettingsFlowResponse struct {
-	Flow              SettingsFlow
-	RedirectBrowserTo string
 }
 
 // kratosからのレスポンスのうち、必要なもののみを定義
@@ -352,20 +346,8 @@ type kratosUpdateLoginFlowBadRequestErrorResponse struct {
 }
 
 // Logout flow
-type kratosCreateLogoutFlowRespnse struct {
-	ID          string `json:"id"`
-	LogoutToken string `json:"logout_token"`
-}
-
-type kratosUpdateLogoutFlowRequest struct {
-	CsrfToken string `json:"csrf_token"`
-}
 
 // Recovery flow
-type kratosCreateRecoveryFlowRespnse struct {
-	ID string      `json:"id"`
-	Ui uiContainer `json:"ui"`
-}
 
 type kratosGetRecoveryFlowRespnse struct {
 	ID string      `json:"id"`
@@ -380,16 +362,6 @@ type kratosUpdateRecoveryFlowRequest struct {
 }
 
 // Settings flow
-type kratosCreateSettingsFlowRespnse struct {
-	ID string      `json:"id"`
-	Ui uiContainer `json:"ui"`
-}
-
-type kratosGetSettingsFlowRespnse struct {
-	ID    string      `json:"id"`
-	Ui    uiContainer `json:"ui"`
-	State string      `json:"state"`
-}
 
 type kratosUpdateSettingsFlowRequest struct {
 	Method    string `json:"method"`

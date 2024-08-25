@@ -12,19 +12,19 @@ const (
 	PATH_ADMIN_LIST_IDENTITIES = "/admin/identities"
 )
 
-type AdminGetIdentityInput struct {
+// --------------------------------------------------------------------------
+// Admin Get Identity
+// --------------------------------------------------------------------------
+type AdminGetIdentityRequest struct {
 	ID                string `json:"id"`
 	IncludeCredential string `json:"include_credential"`
 }
 
-func (p *Provider) AdminGetIdentity(ctx context.Context, w http.ResponseWriter, r *http.Request, i AdminGetIdentityInput) (Identity, error) {
-	var (
-		err error
-	)
-
-	kratosResp, err := p.requestKratosAdmin(ctx, w, r, kratosRequest{
+func (p *Provider) AdminGetIdentity(ctx context.Context, r AdminGetIdentityRequest) (Identity, error) {
+	// Request to kratos
+	kratosResp, err := p.requestKratosAdmin(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("/admin/identities/%s?include_credential=%s", i.ID, i.IncludeCredential),
+		Path:   fmt.Sprintf("%s/%s?include_credential=%s", PATH_ADMIN_LIST_IDENTITIES, r.ID, r.IncludeCredential),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "AdminGetIdentity", "requestKratosAdmin error", err)
@@ -40,18 +40,18 @@ func (p *Provider) AdminGetIdentity(ctx context.Context, w http.ResponseWriter, 
 	return identity, nil
 }
 
-type AdminListIdentitiesInput struct {
+// --------------------------------------------------------------------------
+// Admin List Identities
+// --------------------------------------------------------------------------
+type AdminListIdentitiesRequest struct {
 	CredentialIdentifier string `json:"credential_identifier"`
 }
 
-func (p *Provider) AdminListIdentities(ctx context.Context, w http.ResponseWriter, r *http.Request, i AdminListIdentitiesInput) ([]Identity, error) {
-	var (
-		err error
-	)
-
-	kratosResp, err := p.requestKratosAdmin(ctx, w, r, kratosRequest{
+func (p *Provider) AdminListIdentities(ctx context.Context, r AdminListIdentitiesRequest) ([]Identity, error) {
+	// Request to kratos
+	kratosResp, err := p.requestKratosAdmin(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?credential_identifier=%s", PATH_ADMIN_LIST_IDENTITIES, i.CredentialIdentifier),
+		Path:   fmt.Sprintf("%s?credential_identifier=%s", PATH_ADMIN_LIST_IDENTITIES, r.CredentialIdentifier),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "AdminListIdentity", "requestKratosAdmin error", err)

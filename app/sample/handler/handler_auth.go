@@ -74,9 +74,9 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	var err error
 	var registrationFlow kratos.RegistrationFlow
 	if params.FlowID == "" {
-		registrationFlow, err = p.d.Kratos.CreateRegistrationBrowserFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
+		registrationFlow, err = p.d.Kratos.CreateRegistrationFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
 	} else {
-		registrationFlow, err = p.d.Kratos.GetRegistrationBrowserFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
+		registrationFlow, err = p.d.Kratos.GetRegistrationFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -156,9 +156,9 @@ func (p *Provider) handleGetAuthRegistrationOidc(w http.ResponseWriter, r *http.
 	var err error
 	var registrationFlow kratos.RegistrationFlow
 	if params.FlowID == "" {
-		registrationFlow, err = p.d.Kratos.CreateRegistrationBrowserFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
+		registrationFlow, err = p.d.Kratos.CreateRegistrationFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
 	} else {
-		registrationFlow, err = p.d.Kratos.GetRegistrationBrowserFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
+		registrationFlow, err = p.d.Kratos.GetRegistrationFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -185,7 +185,7 @@ func (p *Provider) handleGetAuthRegistrationOidc(w http.ResponseWriter, r *http.
 	}
 
 	if len(identities) == 1 {
-		_, err = p.d.Kratos.UpdateRegistrationBrowserFlow(ctx, w, r, kratos.UpdateRegistrationBrowserFlowInput{
+		_, err = p.d.Kratos.UpdateRegistrationFlow(ctx, w, r, kratos.UpdateRegistrationFlowInput{
 			FlowID:    registrationFlow.FlowID,
 			CsrfToken: registrationFlow.CsrfToken,
 			Method:    "oidc",
@@ -270,9 +270,9 @@ func (p *Provider) handleGetAuthRegistrationPasskey(w http.ResponseWriter, r *ht
 	var err error
 	var registrationFlow kratos.RegistrationFlow
 	if params.FlowID == "" {
-		registrationFlow, err = p.d.Kratos.CreateRegistrationBrowserFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
+		registrationFlow, err = p.d.Kratos.CreateRegistrationFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
 	} else {
-		registrationFlow, err = p.d.Kratos.GetRegistrationBrowserFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
+		registrationFlow, err = p.d.Kratos.GetRegistrationFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -300,6 +300,22 @@ type postAuthRegistrationRequestParams struct {
 	Traits               kratos.Traits `validate:"required"`
 	Password             string        `validate:"required,eqfield=PasswordConfirmation" ja:"パスワード"`
 	PasswordConfirmation string        `validate:"required" ja:"パスワード確認"`
+}
+
+func newPostAuthRegistrationRequestParams(r *http.Request) *postAuthRegistrationRequestParams {
+	return &postAuthRegistrationRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Traits: kratos.Traits{
+			Email:     r.PostFormValue("traits.email"),
+			Firstname: r.PostFormValue("traits.firstname"),
+			Lastname:  r.PostFormValue("traits.lastname"),
+			Nickname:  r.PostFormValue("traits.nickname"),
+			Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
+		},
+		Password:             r.PostFormValue("password"),
+		PasswordConfirmation: r.PostFormValue("password_confirmation"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -353,19 +369,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := postAuthRegistrationRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Traits: kratos.Traits{
-			Email:     r.PostFormValue("traits.email"),
-			Firstname: r.PostFormValue("traits.firstname"),
-			Lastname:  r.PostFormValue("traits.lastname"),
-			Nickname:  r.PostFormValue("traits.nickname"),
-			Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
-		},
-		Password:             r.PostFormValue("password"),
-		PasswordConfirmation: r.PostFormValue("password_confirmation"),
-	}
+	params := newPostAuthRegistrationRequestParams(r)
 
 	// prepare views
 	registrationFormView := newView("auth/registration/_form.html").addParams(params.toViewParams())
@@ -384,7 +388,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	}))
 
 	// update Registration Flow
-	updateRegistrationFlowResponse, err := p.d.Kratos.UpdateRegistrationBrowserFlow(ctx, kratos.UpdateRegistrationBrowserFlowRequest{
+	updateRegistrationFlowResponse, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: params.FlowID,
 		Header: kratos.KratosRequestHeader{
 			Cookie:   r.Header.Get("Cookie"),
@@ -394,7 +398,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 			CsrfToken: params.CsrfToken,
 			Method:    "password",
 			Traits:    params.Traits,
-			Password:  &params.Password,
+			Password:  params.Password,
 		},
 	})
 	if err != nil {
@@ -403,14 +407,14 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Transferring cookies between requests.
-	// The cookie returned in the update flow is required for the request in case of a subsequent transition to the verification flow.
-	r.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
-
 	// transition to verification flow from registration flow
 	// get verification flow
-	verificationFlow, err := p.d.Kratos.GetVerificationBrowserFlow(ctx, w, r, kratos.GetVerificationFlowInput{
+	getVerificationFlowResp, err := p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 		FlowID: updateRegistrationFlowResponse.VerificationFlowID,
+		Header: kratos.KratosRequestHeader{
+			Cookie:   updateRegistrationFlowResponse.Header.Cookie, // Transferring cookies from update registration flow response
+			ClientIP: r.RemoteAddr,
+		},
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "get verification error", "err", err.Error())
@@ -419,12 +423,12 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	}
 
 	// render verification code page (replace <body> tag and push url)
-	w.Header().Set("Set-Cookie", updateRegistrationFlowResponse.Cookie)
-	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", verificationFlow.FlowID))
+	w.Header().Set("Set-Cookie", updateRegistrationFlowResponse.Header.Cookie)
+	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
 	verificationCodeView.addParams(map[string]any{
-		"VerificationFlowID": verificationFlow.FlowID,
-		"CsrfToken":          verificationFlow.CsrfToken,
-		"IsUsedFlow":         verificationFlow.IsUsedFlow,
+		"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
+		"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
+		"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
 	}).render(w, r, session)
 }
 
@@ -507,7 +511,7 @@ func (p *Provider) handlePostAuthRegistrationOidc(w http.ResponseWriter, r *http
 	}))
 
 	// update Registration Flow
-	kratosResp, err := p.d.Kratos.UpdateRegistrationBrowserFlow(ctx, w, r, kratos.UpdateRegistrationBrowserFlowInput{
+	kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, w, r, kratos.UpdateRegistrationFlowInput{
 		FlowID:    params.FlowID,
 		CsrfToken: params.CsrfToken,
 		Method:    "oidc",
@@ -603,7 +607,7 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 	}))
 
 	// Registration Flow 更新
-	kratosResp, err := p.d.Kratos.UpdateRegistrationBrowserFlow(ctx, w, r, kratos.UpdateRegistrationBrowserFlowInput{
+	kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, w, r, kratos.UpdateRegistrationFlowInput{
 		FlowID:          params.FlowID,
 		CsrfToken:       params.CsrfToken,
 		Method:          "passkey",
@@ -686,9 +690,9 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	var err error
 	var verificationFlow kratos.VerificationFlow
 	if params.FlowID == "" {
-		verificationFlow, err = p.d.Kratos.CreateVerificationBrowserFlow(ctx, w, r, kratos.CreateVerificationFlowInput{})
+		verificationFlow, err = p.d.Kratos.CreateVerificationFlow(ctx, w, r, kratos.CreateVerificationFlowInput{})
 	} else {
-		verificationFlow, err = p.d.Kratos.GetVerificationBrowserFlow(ctx, w, r, kratos.GetVerificationFlowInput{
+		verificationFlow, err = p.d.Kratos.GetVerificationFlow(ctx, w, r, kratos.GetVerificationFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -767,9 +771,9 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	var err error
 	var verificationFlow kratos.VerificationFlow
 	if params.FlowID == "" {
-		verificationFlow, err = p.d.Kratos.CreateVerificationBrowserFlow(ctx, w, r, kratos.CreateVerificationFlowInput{})
+		verificationFlow, err = p.d.Kratos.CreateVerificationFlow(ctx, w, r, kratos.CreateVerificationFlowInput{})
 	} else {
-		verificationFlow, err = p.d.Kratos.GetVerificationBrowserFlow(ctx, w, r, kratos.GetVerificationFlowInput{
+		verificationFlow, err = p.d.Kratos.GetVerificationFlow(ctx, w, r, kratos.GetVerificationFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -841,7 +845,7 @@ func (p *Provider) handlePostVerificationEmail(w http.ResponseWriter, r *http.Re
 	}))
 
 	// Verification Flow 更新
-	updateVerificationFlowResponse, err := p.d.Kratos.UpdateVerificationBrowserFlow(ctx, w, r, kratos.UpdateVerificationFlowInput{
+	updateVerificationFlowResponse, err := p.d.Kratos.UpdateVerificationFlow(ctx, w, r, kratos.UpdateVerificationFlowInput{
 		FlowID:    params.FlowID,
 		CsrfToken: params.CsrfToken,
 		Email:     params.Email,
@@ -925,7 +929,7 @@ func (p *Provider) handlePostVerificationCode(w http.ResponseWriter, r *http.Req
 	}))
 
 	// Verification Flow 更新
-	_, err := p.d.Kratos.UpdateVerificationBrowserFlow(ctx, w, r, kratos.UpdateVerificationFlowInput{
+	_, err := p.d.Kratos.UpdateVerificationFlow(ctx, w, r, kratos.UpdateVerificationFlowInput{
 		FlowID:    params.FlowID,
 		Code:      params.Code,
 		CsrfToken: params.CsrfToken,
@@ -936,7 +940,7 @@ func (p *Provider) handlePostVerificationCode(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	loginFlow, err := p.d.Kratos.CreateLoginBrowserFlow(ctx, w, r, kratos.CreateLoginFlowInput{})
+	loginFlow, err := p.d.Kratos.CreateLoginFlow(ctx, w, r, kratos.CreateLoginFlowInput{})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())
 		verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
@@ -1019,11 +1023,11 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var loginFlow kratos.LoginFlow
 	if params.FlowID == "" {
-		loginFlow, err = p.d.Kratos.CreateLoginBrowserFlow(ctx, w, r, kratos.CreateLoginFlowInput{
+		loginFlow, err = p.d.Kratos.CreateLoginFlow(ctx, w, r, kratos.CreateLoginFlowInput{
 			Refresh: refresh,
 		})
 	} else {
-		loginFlow, err = p.d.Kratos.GetLoginBrowserFlow(ctx, w, r, kratos.GetLoginFlowInput{
+		loginFlow, err = p.d.Kratos.GetLoginFlow(ctx, w, r, kratos.GetLoginFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -1116,7 +1120,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	// update login flow
-	_, err := p.d.Kratos.UpdateLoginBrowserFlow(ctx, w, r, kratos.UpdateLoginFlowInput{
+	_, err := p.d.Kratos.UpdateLoginFlow(ctx, w, r, kratos.UpdateLoginFlowInput{
 		FlowID:     params.FlowID,
 		CsrfToken:  params.CsrfToken,
 		Identifier: params.Identifier,
@@ -1221,7 +1225,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	}))
 
 	// update login flow
-	_, err := p.d.Kratos.UpdateOidcLoginBrowserFlow(ctx, w, r, kratos.UpdateOidcLoginFlowInput{
+	_, err := p.d.Kratos.UpdateOidcLoginFlow(ctx, w, r, kratos.UpdateOidcLoginFlowInput{
 		FlowID:    params.FlowID,
 		CsrfToken: params.CsrfToken,
 		Provider:  params.Provider,
@@ -1335,9 +1339,9 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	var err error
 	var recoveryFlow kratos.RecoveryFlow
 	if params.FlowID == "" {
-		recoveryFlow, err = p.d.Kratos.CreateRecoveryBrowserFlow(ctx, w, r, kratos.CreateRecoveryFlowInput{})
+		recoveryFlow, err = p.d.Kratos.CreateRecoveryFlow(ctx, w, r, kratos.CreateRecoveryFlowInput{})
 	} else {
-		recoveryFlow, err = p.d.Kratos.GetRecoveryBrowserFlow(ctx, w, r, kratos.GetRecoveryFlowInput{
+		recoveryFlow, err = p.d.Kratos.GetRecoveryFlow(ctx, w, r, kratos.GetRecoveryFlowInput{
 			FlowID: params.FlowID,
 		})
 	}
@@ -1409,7 +1413,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	}))
 
 	// update Recovery flow
-	kratosResp, err := p.d.Kratos.UpdateRecoveryBrowserFlow(ctx, w, r, kratos.UpdateRecoveryFlowInput{
+	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, w, r, kratos.UpdateRecoveryFlowInput{
 		FlowID:    params.FlowID,
 		CsrfToken: params.CsrfToken,
 		Email:     params.Email,
@@ -1489,7 +1493,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 	}))
 
 	// Recovery Flow 更新
-	kratosResp, err := p.d.Kratos.UpdateRecoveryBrowserFlow(ctx, w, r, kratos.UpdateRecoveryFlowInput{
+	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, w, r, kratos.UpdateRecoveryFlowInput{
 		FlowID:    params.FlowID,
 		CsrfToken: params.CsrfToken,
 		Code:      params.Code,

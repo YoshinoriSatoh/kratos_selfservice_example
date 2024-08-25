@@ -25,7 +25,6 @@ func init() {
 		PrivilegedAccessLimitMinutes: 10,
 		KratosPublicEndpoint:         "http://kratos:4433",
 		KratosAdminEndpoint:          "http://kratos:4434",
-		BirthdateFormat:              "2006-01-02",
 	})
 
 	handler.Init(handler.InitInput{
@@ -35,7 +34,6 @@ func init() {
 			Domain:            "localhost",
 			Secure:            false,
 		},
-		BirthdateFormat: "2006-01-02",
 	})
 
 	// Create package providers with dependencies

@@ -11,31 +11,27 @@
     value="{{.CsrfToken}}"
   />
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">メールアドレス</span>
-      </div>
-      <input 
-        id="email"
-        name="email" 
-        placeholder="例) niko-chan@kratos-example.com"
-        {{if .ValidationFieldError.Email}}
-        class="input input-bordered input-error"
-        {{else}}
-        class="input input-bordered"
-        {{end}}
-      />
-      {{if .ValidationFieldError.Email}}
-      <div class="text-sm text-red-700 my-2">{{.ValidationFieldError.Email}}</div>
-      {{end}}
-    </label>
+  <div class="my-6 text-center">
+    {{ template "components/_input.html" dict 
+      "type" "email" 
+      "name" "email" 
+      "label" "メールアドレス" 
+      "validationErrorMessage" .ValidationFieldError.Email.Message 
+    }}
+  </div> 
+
+  <div class="mx-auto mt-4 text-center">
+    <button 
+      type="submit" 
+      class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >送信</button>
   </div>
 
-  <div class="mx-auto text-center">
-    <button class="btn btn-primary btn-wide">送信</button>
-  </div>
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
 
-  {{ template "_alert.html"}}
-</form> 
+  </form> 
 {{end}}

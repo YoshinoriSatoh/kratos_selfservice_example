@@ -1,20 +1,123 @@
 {{define "layout/_header.html"}}
 <!DOCTYPE html>
-<html lant="ja" data-theme="cupcake">
+<html lant="ja" class="dark">
   <head>
     <title>{{.Title}}</title>
     <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/htmx.org/dist/ext/debug.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="/assets/css/flowbite.min.css" rel="stylesheet">
+    <script src="/assets/js/tailwind.min.js"></script>
+    <script>
+      htmx.onLoad(function(content) {
+        initFlowbite();
+      })
+      tailwind.config = {
+        theme: {
+          extend: {}
+        },
+        darkMode: 'class',
+      }
+    </script>
     <script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
     <script src="http://localhost:4433/.well-known/ory/webauthn.js" ></script>
+    <script>
+      function __oryWebAuthnBufferDecode(value) {
+        return Uint8Array.from(
+          atob(value.replaceAll("-", "+").replaceAll("_", "/")),
+          function (c) {
+            return c.charCodeAt(0)
+          },
+        )
+      }
+    
+      function __oryWebAuthnBufferEncode(value) {
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
+          .replaceAll("+", "-")
+          .replaceAll("/", "_")
+          .replaceAll("=", "")
+      }
+    
+      async function passkeyLoginAutoCompleteInit() {
+        const dataEl = document.getElementsByName("passkey_challenge")[0]
+        const resultEl = document.getElementsByName("passkey_login")[0]
+        const identifierEl = document.getElementsByName("identifier")[0]
+    
+        if (!dataEl || !resultEl || !identifierEl) {
+          console.debug(
+            "__oryPasskeyLoginAutocompleteInit: mandatory fields not found",
+          )
+          return
+        }
+    
+        if (
+          !window.PublicKeyCredential ||
+          !window.PublicKeyCredential.isConditionalMediationAvailable ||
+          window.Cypress // Cypress auto-fills the autocomplete, which we don't want
+        ) {
+          console.log("This browser does not support WebAuthn!")
+          return
+        }
+        const isCMA = await PublicKeyCredential.isConditionalMediationAvailable()
+        if (!isCMA) {
+          console.log(
+            "This browser does not support WebAuthn Conditional Mediation!",
+          )
+          return
+        }
+    
+        let opt = JSON.parse(dataEl.value)
+        console.log(opt)
+    
+        if (opt.publicKey.user && opt.publicKey.user.id) {
+          opt.publicKey.user.id = __oryWebAuthnBufferDecode(opt.publicKey.user.id)
+        }
+        opt.publicKey.challenge = __oryWebAuthnBufferDecode(opt.publicKey.challenge)
+    
+        // Allow aborting through a global variable
+        window.abortPasskeyConditionalUI = new AbortController()
+    
+        navigator.credentials
+          .get({
+            publicKey: opt.publicKey,
+            mediation: "conditional",
+            // signal: abortPasskeyConditionalUI.signal,
+          })
+          .then(function (credential) {
+            console.log("AAAAAAAAAAAA")
+            console.log(credential)
+            resultEl.value = JSON.stringify({
+              id: credential.id,
+              rawId: __oryWebAuthnBufferEncode(credential.rawId),
+              type: credential.type,
+              response: {
+                authenticatorData: __oryWebAuthnBufferEncode(
+                  credential.response.authenticatorData,
+                ),
+                clientDataJSON: __oryWebAujkthnBufferEncode(
+                  credential.response.clientDataJSON,
+                ),
+                signature: __oryWebAuthnBufferEncode(credential.response.signature),
+                userHandle: __oryWebAuthnBufferEncode(
+                  credential.response.userHandle,
+                ),
+              },
+            })
+    
+            htmx.trigger("#login-form", "post_after_passkey_got_credential")
+    
+          })
+          .catch((err) => {
+            console.log("BBBBBBBBBBBBBB")
+            console.log(err)
+          })
+            console.log("CCCCCCCCCCCCCCC")
+      }
+      htmx.onLoad(passkeyLoginAutoCompleteInit)
+    </script>
     <meta name="htmx-config" content='{"withCredentials":"true"}'>
-    <style>
-    </style>
   </head>
-<body>
-  <main>
-    {{template "layout/_navbar.html" .}}
-    <div class="divider mt-1 h-px"></div> 
+  <body class="dark:bg-gray-900 dark:text-white">
+    <main>
+      {{template "layout/_navbar.html" .}}
+      <div class="container mx-auto px-4 pt-20">
 {{end}}

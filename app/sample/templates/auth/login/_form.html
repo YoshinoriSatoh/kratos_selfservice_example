@@ -1,111 +1,11 @@
 {{define "auth/login/_form.html"}}
 
-<script>
-  function __oryWebAuthnBufferDecode(value) {
-    return Uint8Array.from(
-      atob(value.replaceAll("-", "+").replaceAll("_", "/")),
-      function (c) {
-        return c.charCodeAt(0)
-      },
-    )
-  }
-
-  function __oryWebAuthnBufferEncode(value) {
-    return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replaceAll("=", "")
-  }
-
-  async function passkeyLoginAutoCompleteInit() {
-    const dataEl = document.getElementsByName("passkey_challenge")[0]
-    const resultEl = document.getElementsByName("passkey_login")[0]
-    const identifierEl = document.getElementsByName("identifier")[0]
-
-    if (!dataEl || !resultEl || !identifierEl) {
-      console.debug(
-        "__oryPasskeyLoginAutocompleteInit: mandatory fields not found",
-      )
-      return
-    }
-
-    if (
-      !window.PublicKeyCredential ||
-      !window.PublicKeyCredential.isConditionalMediationAvailable ||
-      window.Cypress // Cypress auto-fills the autocomplete, which we don't want
-    ) {
-      console.log("This browser does not support WebAuthn!")
-      return
-    }
-    const isCMA = await PublicKeyCredential.isConditionalMediationAvailable()
-    if (!isCMA) {
-      console.log(
-        "This browser does not support WebAuthn Conditional Mediation!",
-      )
-      return
-    }
-
-    let opt = JSON.parse(dataEl.value)
-    console.log(opt)
-
-    if (opt.publicKey.user && opt.publicKey.user.id) {
-      opt.publicKey.user.id = __oryWebAuthnBufferDecode(opt.publicKey.user.id)
-    }
-    opt.publicKey.challenge = __oryWebAuthnBufferDecode(opt.publicKey.challenge)
-
-    // Allow aborting through a global variable
-    window.abortPasskeyConditionalUI = new AbortController()
-
-    navigator.credentials
-      .get({
-        publicKey: opt.publicKey,
-        mediation: "conditional",
-        // signal: abortPasskeyConditionalUI.signal,
-      })
-      .then(function (credential) {
-        console.log("AAAAAAAAAAAA")
-        console.log(credential)
-        resultEl.value = JSON.stringify({
-          id: credential.id,
-          rawId: __oryWebAuthnBufferEncode(credential.rawId),
-          type: credential.type,
-          response: {
-            authenticatorData: __oryWebAuthnBufferEncode(
-              credential.response.authenticatorData,
-            ),
-            clientDataJSON: __oryWebAujkthnBufferEncode(
-              credential.response.clientDataJSON,
-            ),
-            signature: __oryWebAuthnBufferEncode(credential.response.signature),
-            userHandle: __oryWebAuthnBufferEncode(
-              credential.response.userHandle,
-            ),
-          },
-        })
-
-        htmx.trigger("#login-form", "post_after_passkey_got_credential")
-
-      })
-      .catch((err) => {
-        console.log("BBBBBBBBBBBBBB")
-        console.log(err)
-      })
-        console.log("CCCCCCCCCCCCCCC")
-  }
-  htmx.onLoad(passkeyLoginAutoCompleteInit)
-</script>
-
-{{ if and (ne .Information "") (ne .Information nil) }}
-<div class="alert alert-info my-2">
-  <div>
-    <div>{{.Information}}</div>
-  </div>
-</div>
-{{end}}
 <form 
   id="login-form"
-  class="mb-4"
->
+  hx-post="/auth/login?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
+  hx-swap="outerHTML" 
+  hx-target="this"
+  >
   <input
     name="csrf_token"
     type="hidden"
@@ -123,70 +23,37 @@
     type="hidden"
   />
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">メールアドレス</span>
-      </div>
-      <input 
-        id="email"
-        name="identifier" 
-        type="email"
-        value="{{.Traits.Email}}"
-        class="input input-bordered"
-      >
-    </label>
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "email" 
+      "name" "identifier" 
+      "label" "メールアドレス" 
+      "value" .Traits.Email 
+      "validationErrorMessage" .ValidationFieldError.Email.Message 
+    }}
+  </div> 
 
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">パスワード</span>
-      </div>
-      <input 
-        id="password"
-        type="password" 
-        name="password" 
-        value="Overwatch2024!@"
-        class="input input-bordered"
-      >
-    </label>
-  </div>
-
-  <div class="mx-auto text-center">
-    <button
-      class="btn btn-primary btn-wide"
-      hx-post="/auth/login?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
-      hx-swap="outerHTML" 
-      hx-target="this">ログイン</button>
-  </div>
-
-  {{ template "_alert.html"}}
-</form> 
-
-<form 
-  id="login-form-google"
-  hx-post="/auth/login?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
-  hx-swap="outerHTML" 
-  hx-target="this"
-  class="mb-4"
->
-  <input
-    name="csrf_token"
-    type="hidden"
-    value="{{.CsrfToken}}"
-  />
-
-  {{ if eq .ShowSocialLogin true }}
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "password"  
+      "name" "password" 
+      "label" "パスワード" 
+      "validationErrorMessage" .ValidationFieldError.Password.Message 
+    }}
+  </div> 
+  
   <div class="mx-auto text-center">
     <button 
-      class="btn btn-primary btn-wide"
-      hx-post="/auth/login/oidc?flow={{.LoginFlowID}}" 
-      hx-vals='{"provider": "google"}'
-      hx-swap="outerHTML" 
-      hx-target="this">googleログイン</button>
+      type="submit" 
+      class="sm:w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >ログイン</button>
   </div>
-  {{end}}
 
-  {{ template "_alert.html"}}
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
 </form> 
 
 {{end}}

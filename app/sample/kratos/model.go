@@ -1,18 +1,76 @@
 package kratos
 
-import "time"
+import (
+	"log/slog"
+	"time"
+)
 
+// Traitsはjsonb型なので要素はstring型
 type Traits struct {
-	Email     string    `json:"email" validate:"required,email" ja:"メールアドレス"`
-	Firstname string    `json:"firstname" validate:"required" ja:"氏名(姓)"`
-	Lastname  string    `json:"lastname" validate:"required" ja:"氏名(名)"`
-	Nickname  string    `json:"nickname" validate:"required" ja:"ニックネーム"`
-	Birthdate time.Time `json:"birthdate" ja:"生年月日"`
+	Email     string `json:"email" validate:"required,email" ja:"メールアドレス"`
+	Firstname string `json:"firstname" validate:"required" ja:"名"`
+	Lastname  string `json:"lastname" validate:"required" ja:"性"`
+	Nickname  string `json:"nickname" validate:"required" ja:"ニックネーム"`
+	Birthdate string `json:"birthdate" validate:"date" ja:"生年月日"`
+}
+
+func (t *Traits) ToMap() map[string]any {
+	return map[string]any{
+		"Email":     t.Email,
+		"Firstname": t.Firstname,
+		"Lastname":  t.Lastname,
+		"Nickname":  t.Nickname,
+		"Birthdate": t.Birthdate,
+	}
+}
+
+func setTraitsFromUiNodes(traits *Traits, nodes []uiNode) error {
+	for _, node := range nodes {
+		if node.Attributes.Name == "traits.email" {
+			traits.Email, _ = node.Attributes.Value.(string)
+		}
+		if node.Attributes.Name == "traits.firstname" {
+			traits.Firstname, _ = node.Attributes.Value.(string)
+		}
+		if node.Attributes.Name == "traits.lastname" {
+			traits.Lastname, _ = node.Attributes.Value.(string)
+		}
+		if node.Attributes.Name == "traits.nickname" {
+			traits.Nickname, _ = node.Attributes.Value.(string)
+		}
+		if node.Attributes.Name == "traits.birthdate" {
+			if birthdate, ok := node.Attributes.Value.(string); ok {
+				// parseのlayoutがこれでいいかはOIDCプロバイダーによるとおもう
+				t, err := time.Parse(time.DateOnly, birthdate)
+				if err != nil {
+					slog.Error(err.Error())
+					return err
+				}
+				traits.Birthdate = t.Format(time.DateOnly)
+			}
+		}
+	}
+	return nil
+}
+
+func getPasskeyCreateData(nodes []uiNode) string {
+	for _, node := range nodes {
+		if node.Attributes.Name == "passkey_create_data" {
+			return node.Attributes.Value.(string)
+		}
+	}
+	return ""
 }
 
 type Identity struct {
 	ID     string `json:"id" validate:"required"`
 	Traits Traits `json:"traits" validate:"required"`
+}
+
+func (i Identity) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("id", i.ID),
+	)
 }
 
 // session
@@ -22,7 +80,65 @@ type Session struct {
 	AuthenticatedAt time.Time `json:"authenticated_at"`
 }
 
+func (s *Session) NeedLoginWhenPrivilegedAccess() bool {
+	authenticateAt := s.AuthenticatedAt.In(pkgVars.locationJst)
+	if authenticateAt.Before(time.Now().Add(-time.Second * pkgVars.privilegedAccessLimitMinutes)) {
+		return true
+	} else {
+		return false
+	}
+}
+
+type RegistrationFlow struct {
+	FlowID             string
+	CredentialType     CredentialsType
+	Traits             Traits
+	PasskeyCreateData  string
+	CsrfToken          string
+	VerificationFlowID string
+}
+
+type VerificationFlow struct {
+	FlowID    string
+	State     string
+	CsrfToken string
+}
+
+type LoginFlow struct {
+	FlowID              string
+	PasskeyChallenge    string
+	CsrfToken           string
+	DuplicateIdentifier string
+}
+
+type UpdateLoginFlowResponse struct {
+	RedirectBrowserTo string
+}
+
+type RecoveryFlow struct {
+	FlowID    string
+	CsrfToken string
+}
+
+type UpdateRecoveryFlowResponse struct {
+	Flow              RecoveryFlow
+	RedirectBrowserTo string
+}
+
+type SettingsFlow struct {
+	FlowID    string
+	CsrfToken string
+}
+
+type UpdateSettingsFlowResponse struct {
+	Flow              SettingsFlow
+	RedirectBrowserTo string
+}
+
 // kratosからのレスポンスのうち、必要なもののみを定義
+type kratosSuccessResponse struct {
+	Ui *uiContainer `json:"ui,omitempty"`
+}
 
 type uiText struct {
 	Context map[string]interface{} `json:"context,omitempty"`
@@ -78,7 +194,20 @@ type settingsFlow struct {
 	Ui uiContainer `json:"ui"`
 }
 
-type genericError struct {
+type ErrorUiMessages []ErrorUiMessage
+
+type ErrorUiMessage struct {
+	ID      int64
+	Type    string
+	Text    string
+	Context map[string]interface{}
+}
+
+func (e ErrorUiMessages) Error() string {
+	return ""
+}
+
+type GenericError struct {
 	Code    int64                  `json:"code,omitempty"`
 	Debug   string                 `json:"debug,omitempty"`
 	Details map[string]interface{} `json:"details,omitempty"`
@@ -87,14 +216,28 @@ type genericError struct {
 	Reason  string                 `json:"reason,omitempty"`
 	Request string                 `json:"request,omitempty"`
 	Status  string                 `json:"status,omitempty"`
+	// err     error                  `json:"-"`
 }
 
-type errorGeneric struct {
-	Error genericError `json:"error"`
+func (e GenericError) Error() string {
+	return e.Message
 }
 
-type errorBrowserLocationChangeRequired struct {
-	RedirectBrowserTo string `json:"redirect_browser_to,omitempty"`
+type ErrorGeneric struct {
+	Err GenericError `json:"error,omitempty"`
+}
+
+func (e ErrorGeneric) Error() string {
+	return e.Err.Error()
+}
+
+type ErrorBrowserLocationChangeRequired struct {
+	Err               GenericError `json:"error"`
+	RedirectBrowserTo string       `json:"redirect_browser_to,omitempty"`
+}
+
+func (e ErrorBrowserLocationChangeRequired) Error() string {
+	return e.Err.Error()
 }
 
 type continueWithFlow struct {
@@ -106,90 +249,86 @@ type continueWith struct {
 	Flow   continueWithFlow `json:"flow"`
 }
 
+type CredentialsType string
+
+const (
+	CredentialsTypePassword = CredentialsType("password")
+	CredentialsTypeOIDC     = CredentialsType("oidc")
+	CredentialsTypePasskey  = CredentialsType("passkey")
+)
+
 // Registration flow
-type kratosCreateRegisrationFlowRespnse struct {
-	ID         string      `json:"id"`
-	Ui         uiContainer `json:"ui"`
-	RequestUrl string      `json:"request_url"`
-}
+// type kratosCreateRegisrationFlowRespnse struct {
+// 	ID     string          `json:"id"`
+// 	Ui     uiContainer     `json:"ui"`
+// 	Active CredentialsType `json:"active"`
+// }
 
-type kratosGetRegisrationFlowRespnse struct {
-	ID         string      `json:"id"`
-	Ui         uiContainer `json:"ui"`
-	RequestUrl string      `json:"request_url"`
-}
+// type kratosGetRegisrationFlowRespnse struct {
+// 	ID     string          `json:"id"`
+// 	Ui     uiContainer     `json:"ui"`
+// 	Active CredentialsType `json:"active"`
+// }
 
-type kratosUpdateRegistrationFlowPasswordMethodRequest struct {
-	CsrfToken string `json:"csrf_token"`
-	Method    string `json:"method"`
-	Traits    Traits `json:"traits"`
-	Password  string `json:"password"`
-}
+// type kratosUpdateRegistrationFlowRequest struct {
+// 	CsrfToken       string  `json:"csrf_token"`
+// 	Method          string  `json:"method"`
+// 	Traits          Traits  `json:"traits"`
+// 	Password        *string `json:"password"`
+// 	Provider        *string `json:"provider"`
+// 	PasskeyRegister *string `json:"passkey_register"`
+// }
 
-type kratosUpdateRegistrationFlowOidcMethodRequest struct {
-	CsrfToken string `json:"csrf_token"`
-	Method    string `json:"method"`
-	Provider  string `json:"provider"`
-	Traits    Traits `json:"traits"`
-}
+// type kratosUpdateRegistrationFlowPasswordMethodRequest struct {
+// 	CsrfToken string `json:"csrf_token"`
+// 	Method    string `json:"method"`
+// 	Traits    Traits `json:"traits"`
+// 	Password  string `json:"password"`
+// }
 
-type kratosUpdateRegistrationFlowPasskeyMethodRequest struct {
-	CsrfToken       string `json:"csrf_token"`
-	Method          string `json:"method"`
-	Traits          Traits `json:"traits"`
-	PasskeyRegister string `json:"passkey_register"`
-}
+// type kratosUpdateRegistrationFlowOidcMethodRequest struct {
+// 	CsrfToken string `json:"csrf_token"`
+// 	Method    string `json:"method"`
+// 	Provider  string `json:"provider"`
+// 	Traits    Traits `json:"traits"`
+// }
 
-type kratosUpdateRegisrationFlowPasswordRespnse struct {
-	ContinueWith []continueWith `json:"continue_with"`
-}
+// type kratosUpdateRegistrationFlowPasskeyMethodRequest struct {
+// 	CsrfToken       string `json:"csrf_token"`
+// 	Method          string `json:"method"`
+// 	Traits          Traits `json:"traits"`
+// 	PasskeyRegister string `json:"passkey_register"`
+// }
+
+// type kratosUpdateRegisrationFlowPasswordRespnse struct {
+// 	RedirectBrowserTo string         `json:"redirect_browser_to"`
+// 	ContinueWith      []continueWith `json:"continue_with"`
+// }
 
 // status code 400 の場合のレスポンスボディのフォーマット
 // ドキュメントではregistration flowが返却される記載しかないが、GenericErrorが返却される場合もある
 // どちらの場合にも対応するため、必要なフィールドを全て定義している
-type kratosUpdateRegistrationFlowBadRequestErrorResponse struct {
+type kratosBadRequestErrorResponse struct {
 	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *genericError `json:"error,omitempty"`
+	Error *GenericError `json:"error,omitempty"`
 }
+
+// type kratosUpdateRegistrationFlowBadRequestErrorResponse struct {
+// 	Ui    *uiContainer  `json:"ui,omitempty"`
+// 	Error *GenericError `json:"error,omitempty"`
+// }
 
 // Verification flow
-type kratosCreateVerificationFlowRespnse struct {
-	ID string      `json:"id"`
-	Ui uiContainer `json:"ui"`
-}
-
-type kratosGetVerificationFlowRespnse struct {
-	ID    string      `json:"id"`
-	Ui    uiContainer `json:"ui"`
-	State string      `json:"state"`
-}
-
-type kratosUpdateVerificationFlowRequest struct {
-	Method    string `json:"method"`
-	Email     string `json:"email"`
-	Code      string `json:"code"`
-	CsrfToken string `json:"csrf_token"`
-}
 
 // status code 400 の場合のレスポンスボディのフォーマット
 // ドキュメントではverification flowが返却される記載しかないが、GenericErrorが返却される場合もある
 // どちらの場合にも対応するため、必要なフィールドを全て定義している
-type kratosUpdateVerificationFlowBadRequestErrorResponse struct {
-	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *genericError `json:"error,omitempty"`
-}
+// type kratosUpdateVerificationFlowBadRequestErrorResponse struct {
+// 	Ui    *uiContainer  `json:"ui,omitempty"`
+// 	Error *GenericError `json:"error,omitempty"`
+// }
 
 // Login flow
-type kratosCreateLoginFlowRespnse struct {
-	ID string      `json:"id"`
-	Ui uiContainer `json:"ui"`
-}
-
-type kratosGetLoginFlowRespnse struct {
-	ID    string      `json:"id"`
-	Ui    uiContainer `json:"ui"`
-	State string      `json:"state"`
-}
 
 type kratosUpdateLoginFlowPasswordRequest struct {
 	Method     string `json:"method"`
@@ -209,7 +348,7 @@ type kratosUpdateLoginFlowOidcRequest struct {
 // どちらの場合にも対応するため、必要なフィールドを全て定義している
 type kratosUpdateLoginFlowBadRequestErrorResponse struct {
 	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *genericError `json:"error,omitempty"`
+	Error *GenericError `json:"error,omitempty"`
 }
 
 // Logout flow
@@ -265,5 +404,5 @@ type kratosUpdateSettingsFlowRequest struct {
 // どちらの場合にも対応するため、必要なフィールドを全て定義している
 type kratosUpdateSettingsFlowBadRequestErrorResponse struct {
 	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *genericError `json:"error,omitempty"`
+	Error *GenericError `json:"error,omitempty"`
 }

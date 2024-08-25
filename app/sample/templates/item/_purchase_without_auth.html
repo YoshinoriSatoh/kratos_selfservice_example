@@ -1,30 +1,29 @@
 {{define "item/_purchase_without_auth.html"}}
 
-<div class="container mx-auto px-24">
-  <h2 class="text-lg text-center font-bold">購入手続き・会員登録</h2>
+<div class="container mx-auto max-w-lg">
+  <h2 class="text-xl text-center font-bold">購入手続き・会員登録</h2>
 
-  <div class="divider mt-1 h-px"></div> 
-
-  <div class="grid grid-cols-12">
-    <div class="container col-span-2">
+  <div class="mt-8 py-4 grid grid-cols-12 dark:border-y dark:border-gray-700">
+    <div class="col-span-2 my-auto">
       <img src="{{.Image}}" alt="Burger" />
     </div>
-    <div class="container col-span-10 ml-8">
-      <div class="mb-2 text-2xl">{{.Name}}</div>
-      <div class="mb-2 text-2xl">{{.Price}}</div>
+    <div class="col-span-10 ml-8">
+      <div class="text-xl">{{.Name}}</div>
+      <div class="mt-2 text-sm">{{.Price}}円</div>
     </div>
   </div> 
 
-  <div class="divider mt-1 h-px"></div> 
-
-  <div class="mb-4 container">
-    <div class="my-4 text-xl text-gray-400">ログインして購入する</div>
+  <div class="mb-4">
+    <div class="my-4 mx-auto text-xl text-gray-400">ログインして購入する</div>
     <div class="mx-auto text-center">
       <button 
-        class="btn btn-accent"
+        type="button" 
+        class="text-blue-700 hover:text-white border border-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center me-2 mb-2 dark:border-blue-500 dark:text-blue-500 dark:hover:text-white dark:hover:bg-blue-500 dark:focus:ring-blue-800"
         hx-get="/auth/login?return_to=/item/{{.ItemID}}/purchase"
         hx-swap="outerHTML" 
-        hx-target="this">ログイン</button>
+        hx-target="this">
+        ログイン
+      </button>
     </div>
   </div>
 

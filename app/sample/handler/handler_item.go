@@ -54,11 +54,14 @@ func (p *Provider) handleGetItemPurchase(w http.ResponseWriter, r *http.Request)
 		itemID: itemID,
 	}
 	item := items[reqParams.itemID]
+
+	localedPrice := pkgVars.printer.Sprintf("%d", item.Price)
 	viewParams := map[string]any{
-		"ItemID": itemID,
-		"Image":  item.Image,
-		"Name":   item.Name,
-		"Price":  item.Price,
+		"ItemID":      itemID,
+		"Image":       item.Image,
+		"Name":        item.Name,
+		"Description": item.Description,
+		"Price":       localedPrice,
 	}
 
 	if isAuthenticated(session) {
@@ -89,10 +92,11 @@ func (p *Provider) handlePostItemPurchase(w http.ResponseWriter, r *http.Request
 	time.Sleep(3 * time.Second)
 
 	viewParams := map[string]any{
-		"ItemID": itemID,
-		"Image":  item.Image,
-		"Name":   item.Name,
-		"Price":  item.Price,
+		"ItemID":      itemID,
+		"Image":       item.Image,
+		"Name":        item.Name,
+		"Description": item.Description,
+		"Price":       item.Price,
 	}
 
 	pkgVars.tmpl.ExecuteTemplate(w, "item/_purchase_complete.html", viewParameters(session, r, viewParams))

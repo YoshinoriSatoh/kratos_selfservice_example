@@ -2,11 +2,24 @@
 {{template "layout/_header.html" .}}
 
 <div class="container mx-auto px-24">
-  <h2 class="text-lg text-center font-bold">検証コードを入力してください</h2>
+  <div class="flex p-4 mb-4 text-sm text-blue-800 rounded-lg bg-blue-50 border border-blue-300 dark:bg-gray-800 dark:text-blue-400 dark:border-blue-800" role="alert">
+    <svg class="flex-shrink-0 inline w-4 h-4 me-3 mt-[2px]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+    </svg>
+    <span class="sr-only">Info</span>
+    <div>
+      <span class="font-medium">アカウント検証メールが送信されました。</span>
+        <ul class="mt-1.5 list-disc list-inside">
+          <li>メールに記載されている6桁の検証コードを入力してください。</li>
+          <li><a class="font-semibold underline hover:no-underline" href="http://localhost:4436" target="_blank">localhostのメールサーバはこちら</a></li>
+      </ul>
+    </div>
+  </div>
+  
   {{template "auth/verification/_code_form.html" .}}
   
   <div class="text-right">
-    <a class="link text-blue-500 text-sm" href="/auth/verification">検証コードを再送</a> 
+    <a class="block py-2 px-3 text-white bg-blue-700 rounded md:bg-transparent md:text-blue-700 md:p-0 dark:text-white md:dark:text-blue-500" href="/auth/verification">検証コードを再送</a>
   </div>
 </div>
 

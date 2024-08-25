@@ -1,10 +1,10 @@
 {{define "top/index.html"}}
 {{template "layout/_header.html" .}}
 
-<div class="my-4 mx-8">
-  <div class="text-2xl">Pickup</div>
+<div class="dark">
+  <div class="text-xl">おすすめの商品</div>
   <div class="my-4">
-    <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
+    <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
       {{ range .Items }}
         {{template "item/_card.html" . }}
       {{end}}

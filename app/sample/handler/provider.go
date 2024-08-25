@@ -2,11 +2,12 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"kratos_example/kratos"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type Provider struct {
@@ -30,9 +31,9 @@ func New(i NewInput) (*Provider, error) {
 
 func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	// Static files
-	fileServer := http.StripPrefix("/static/", http.FileServer(http.Dir("static")))
-	mux.HandleFunc("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/static/") {
+	fileServer := http.StripPrefix("/assets/", http.FileServer(http.Dir("assets")))
+	mux.HandleFunc("GET /assets/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
 			fileServer.ServeHTTP(w, r)
 		} else {
 			http.NotFound(w, r)
@@ -46,6 +47,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 
 	// Authentication Registration
 	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
+	mux.Handle("GET /auth/registration/oidc", p.baseMiddleware(p.handleGetAuthRegistrationOidc))
 	mux.Handle("GET /auth/registration/passkey", p.baseMiddleware(p.handleGetAuthRegistrationPasskey))
 	mux.Handle("POST /auth/registration", p.baseMiddleware(p.handlePostAuthRegistration))
 	mux.Handle("POST /auth/registration/oidc", p.baseMiddleware(p.handlePostAuthRegistrationOidc))
@@ -70,15 +72,15 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("POST /auth/recovery/email", p.baseMiddleware(p.handlePostAuthRecoveryEmail))
 	mux.Handle("POST /auth/recovery/code", p.baseMiddleware(p.handlePostAuthRecoveryCode))
 
-	// My Password
-	mux.Handle("GET /my/password", p.baseMiddleware(p.handleGetMyPassword))
-	mux.Handle("POST /my/password", p.baseMiddleware(p.handlePostMyPassword))
+	// // My Password
+	// mux.Handle("GET /my/password", p.baseMiddleware(p.handleGetMyPassword))
+	// mux.Handle("POST /my/password", p.baseMiddleware(p.handlePostMyPassword))
 
-	// My Profile
-	mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
-	mux.Handle("GET /my/profile/edit", p.baseMiddleware(p.handleGetMyProfileEdit))
-	mux.Handle("GET /my/profile/form", p.baseMiddleware(p.handleGetMyProfileForm))
-	mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
+	// // My Profile
+	// mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
+	// mux.Handle("GET /my/profile/edit", p.baseMiddleware(p.handleGetMyProfileEdit))
+	// mux.Handle("GET /my/profile/form", p.baseMiddleware(p.handleGetMyProfileForm))
+	// mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
 
 	// Top
 	mux.Handle("GET /", p.baseMiddleware(p.handleGetTop))
@@ -92,33 +94,31 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 }
 
 func (p *Provider) baseMiddleware(handler http.HandlerFunc) http.Handler {
-	return p.loggingRquest(
-		p.setSession(handler),
-	)
+	return p.setContext(handler)
 }
 
-func (p *Provider) loggingRquest(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		slog.Info(fmt.Sprintf("[Request] %s %s", r.Method, r.URL.Path))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
+type ctxRequestID struct{}
+type ctxRemoteAddr struct{}
+type ctxCookie struct{}
+type ctxSession struct{}
 
-func (p *Provider) setSession(next http.Handler) http.Handler {
+func (p *Provider) setContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		output, err := p.d.Kratos.Whoami(kratos.WhoamiInput{
-			Cookie:     r.Header.Get("Cookie"),
-			RemoteAddr: r.RemoteAddr,
-		})
-		if err != nil || output.Session == nil {
-			ctx = context.WithValue(ctx, "session", nil)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
+		requestID, _ := uuid.NewRandom()
+		ctx = context.WithValue(ctx, ctxRequestID{}, requestID)
+		ctx = context.WithValue(ctx, ctxRemoteAddr{}, r.RemoteAddr)
+		ctx = context.WithValue(ctx, ctxCookie{}, r.Header.Get("Cookie"))
+
+		session, err := p.d.Kratos.Whoami(ctx, w, r)
+		if err != nil || session == nil {
+			ctx = context.WithValue(ctx, ctxSession{}, nil)
+		} else {
+			ctx = context.WithValue(ctx, ctxSession{}, *session)
 		}
-		slog.Info(fmt.Sprintf("%v", output.Session))
-		ctx = context.WithValue(ctx, "session", *output.Session)
+
+		slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path)
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

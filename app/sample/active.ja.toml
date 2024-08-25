@@ -1,0 +1,48 @@
+[ERR_FALLBACK]
+other = "申し訳ございません、エラーが発生しました。"
+
+[ERR_DEFAULT]
+other = "申し訳ございません、エラーが発生しました。"
+
+[ERR_REGISTRATION_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。お手数ですが会員登録を始めからやり直してください。\n\
+        {{.Host}}/auth/registration
+        """
+
+[ERR_VERIFICATION_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。お手数ですがメールアドレスのコード検証を始めからやり直してください。\n\
+        {{.Host}}/auth/verification
+        """
+
+[ERR_KRATOS_SESSION_INACTIVE]
+other = "ERR_KRATOS_SESSION_INACTIVE"
+[ERR_KRATOS_SESSION_AAL2_REQUIRED]
+other = "ERR_KRATOS_SESSION_AAL2_REQUIRED"
+[ERR_KRATOS_SESSION_ALREADY_AVAILABLE]
+other = "ERR_KRATOS_SESSION_ALREADY_AVAILABLE"
+[ERR_KRATOS_SESSION_REFRESH_REQUIRED]
+other = "ERR_KRATOS_SESSION_REFRESH_REQUIRED"
+[ERR_KRATOS_SELF_SERVICE_FLOW_RETURN_TO_FORBIDDEN]
+other = "ERR_KRATOS_SELF_SERVICE_FLOW_RETURN_TO_FORBIDDEN"
+[ERR_KRATOS_SELF_SERVICE_FLOW_EXPIRED]
+other = "ERR_KRATOS_SELF_SERVICE_FLOW_EXPIRED"
+[ERR_KRATOS_SECURITY_CSRF_VIOLATION]
+other = "ERR_KRATOS_SECURITY_CSRF_VIOLATION"
+[ERR_KRATOS_SECURITY_IDENTITY_MISMATCH]
+other = "ERR_KRATOS_SECURITY_CSRF_VIOLATION"
+[ERR_KRATOS_BROWSER_LOCATION_CHANGE_REQUIRED]
+other = "ERR_KRATOS_BROWSER_LOCATION_CHANGE_REQUIRED"
+
+[ERR_KRATOS_UI_4000001]
+other = "{{.reason}}"
+[ERR_KRATOS_UI_4000002]
+other = "{{.property}}のプロパティが見つかりません。"
+[ERR_KRATOS_UI_4000003]
+other = "長さが{{.min_length}}ですが、{{.actual_length}}である必要があります。"
+
+[ERR_KRATOS_UI_4000007]
+other = "既に登録済みのメールアドレスです。"
+[ERR_KRATOS_UI_1080003]
+other = "1080003"

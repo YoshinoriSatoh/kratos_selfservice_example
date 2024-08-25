@@ -1,0 +1,89 @@
+{{ define "components/_input_date.html" }}
+{{ $type := default "text" (get . "type") }}
+{{ $name := get . "name" }}
+{{ $label := get . "label" }}
+{{ $year := get . "year" }}
+{{ $month := get . "month" }}
+{{ $day := get . "day" }}
+{{ $validationErrorMessage := get . "validationErrorMessage" }}
+{{ $disabled := default false (get . "disabled") }}
+
+{{ $successInputClass := "bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500 me-2" }}
+{{ $errorInputClass := "bg-red-50 border border-red-500 text-red-900 placeholder-red-700 text-sm rounded-lg focus:ring-red-500 dark:bg-gray-700 focus:border-red-500 w-24 p-2.5 dark:text-red-500 dark:placeholder-red-500 dark:border-red-500 me-2" }}
+{{ if eq $disabled true }}
+  {{ $successInputClass = cat $successInputClass "cursor-not-allowed" }}
+  {{ $errorInputClass = cat $errorInputClass "cursor-not-allowed" }}
+{{ end }}
+
+<div>
+  {{ if $validationErrorMessage }}
+  <label for="error" class="block mb-2 text-sm font-medium text-red-700 dark:text-red-500">{{ $label }}</label>
+  {{ else }}
+  <label for="{{ $name }}" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">{{ $label }}</label>
+  {{ end }}
+  
+  <input 
+    type="text" 
+    id="{{ $name }}_year" 
+    {{ if $validationErrorMessage }}
+    class={{ cat $errorInputClass "w-24"}}
+    {{ else }}
+    class={{ cat $successInputClass "w-24"}}
+    {{ end }}
+    name="{{ $name }}_year" 
+    value="{{ $year }}"
+    {{ if eq $disabled true }}
+    disabled
+    {{ end }}
+  />
+  {{ if $validationErrorMessage }}
+  <label for="error" class="text-sm font-medium text-red-700 dark:text-red-500 me-2">年</label>
+  {{ else }}
+  <label for="{{ $name }}" class="text-sm font-medium text-gray-900 dark:text-white me-2">年</label>
+  {{ end }}
+  
+  <input 
+    type="text" 
+    id="{{ $name }}_month" 
+    {{ if $validationErrorMessage }}
+    class={{ cat $errorInputClass "w-16"}}
+    {{ else }}
+    class={{ cat $successInputClass "w-16"}}
+    {{ end }}
+    name="{{ $name }}_month" 
+    value="{{ $month }}"
+    {{ if eq $disabled true }}
+    disabled
+    {{ end }}
+  />
+  {{ if $validationErrorMessage }}
+  <label for="error" class="text-sm font-medium text-red-700 dark:text-red-500 me-2">月</label>
+  {{ else }}
+  <label for="{{ $name }}" class="text-sm font-medium text-gray-900 dark:text-white me-2">月</label>
+  {{ end }}
+  
+  <input 
+    type="text" 
+    id="{{ $name }}_day" 
+    {{ if $validationErrorMessage }}
+    class={{ cat $errorInputClass "w-16"}}
+    {{ else }}
+    class={{ cat $successInputClass "w-16"}}
+    {{ end }}
+    name="{{ $name }}_day" 
+    value="{{ $day }}"
+    {{ if eq $disabled true }}
+    disabled
+    {{ end }}
+  />
+  {{ if $validationErrorMessage }}
+  <label for="error" class="text-sm font-medium text-red-700 dark:text-red-500 me-2">日</label>
+  {{ else }}
+  <label for="{{ $name }}" class="text-sm font-medium text-gray-900 dark:text-white me-2">日</label>
+  {{ end }}
+  
+  {{ if $validationErrorMessage }}
+  <p class="mt-2 text-sm text-red-600 dark:text-red-500">{{ $validationErrorMessage }}</p>
+  {{ end }}
+</div>  
+{{ end }}

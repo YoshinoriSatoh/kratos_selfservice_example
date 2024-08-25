@@ -184,6 +184,11 @@
     <button type="button" class="btn btn-primary btn-wide" onclick="passkeyRegistration()">登録</button>
   </div>
 
-  {{template "_alert.html" . }}
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
+
 </form>
 {{end}}

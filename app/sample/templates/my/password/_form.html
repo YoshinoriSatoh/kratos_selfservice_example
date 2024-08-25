@@ -23,7 +23,7 @@
         class="input input-bordered"
         onkeyup="this.setCustomValidity('')"
         hx-on:htmx:validation:validate="
-          if(this.value != document.getElementById('password-confirmation').value) {
+          if(this.value != document.getElementById('password_confirmation').value) {
             this.setCustomValidity('パスワードが一致しません') 
             htmx.find('#settings-form').reportValidity()
           }
@@ -36,9 +36,9 @@
         <span class="label-text">パスワード確認</span>
       </div>
       <input 
-        id="password-confirmation"
+        id="password_confirmation"
         type="password" 
-        name="password-confirmation" 
+        name="password_confirmation" 
         value="Overwatch2024!@"
         class="input input-bordered"
         onkeyup="this.setCustomValidity('')"
@@ -50,6 +50,10 @@
     <button class="btn btn-primary btn-wide">送信</button>
   </div>
 
-  {{ template "_alert.html"}}
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
 </form>
 {{end}}

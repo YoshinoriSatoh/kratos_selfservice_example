@@ -90,7 +90,7 @@ selfservice:
         oidc:
           hooks:
             - hook: session 
-          default_browser_return_url: http://localhost:3000/
+          default_browser_return_url: http://localhost:3000/auth/registration
       enable_legacy_one_step: true
     verification:
       enabled: true

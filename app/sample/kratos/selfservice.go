@@ -1,16 +1,15 @@
 package kratos
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
-	"time"
 )
 
 const (
-	PATH_SESSIONS_WHOAMI                       = "/sessions/whoami"
 	PATH_SELF_SERVICE_CREATE_REGISTRATION_FLOW = "/self-service/registration/browser"
 	PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW = "/self-service/registration"
 	PATH_SELF_SERVICE_GET_REGISTRATION_FLOW    = "/self-service/registration/flows"
@@ -29,1183 +28,719 @@ const (
 	PATH_SELF_SERVICE_UPDATE_RECOVERY_FLOW     = "/self-service/recovery"
 	PATH_SELF_SERVICE_GET_RECOVERY_FLOW        = "/self-service/recovery/flows"
 	PATH_SELF_SERVICE_CALLBACK_OIDC            = "/self-service/methods/oidc/callback"
-	PATH_ADMIN_LIST_IDENTITIES                 = "/admin/identities"
 )
 
-// ------------------------- Session -------------------------
-type WhoamiInput struct {
-	Cookie     string
-	RemoteAddr string
+// --------------------------------------------------------------------------
+// Get Registration Flow
+// --------------------------------------------------------------------------
+type GetRegistrationFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
 }
 
-type WhoamiOutput struct {
-	Cookies       []string
-	Session       *Session
-	ErrorMessages []string
+type GetRegistrationFlowResponse struct {
+	Header           KratosResponseHeader
+	RegistrationFlow RegistrationFlow
 }
 
-func (p *Provider) Whoami(i WhoamiInput) (WhoamiOutput, error) {
-	var output WhoamiOutput
+type kratosGetRegisrationFlowRespnseBody struct {
+	ID     string          `json:"id"`
+	Ui     uiContainer     `json:"ui"`
+	Active CredentialsType `json:"active"`
+}
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       PATH_SESSIONS_WHOAMI,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+func (p *Provider) GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (GetRegistrationFlowResponse, error) {
+	// Request to kratos
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_REGISTRATION_FLOW, r.FlowID),
+		Header: r.Header,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "GetRegistrationFlow", "requestKratosPublic error", err)
+		return GetRegistrationFlowResponse{}, err
 	}
 
-	slog.Info(string(kratosOutput.BodyBytes))
-	slog.Info(fmt.Sprintf("%v", kratosOutput))
-
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	// Parse response body
+	var kratosRespBody kratosGetRegisrationFlowRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GetRegistrationFlow", "json unmarshal error", err)
+		return GetRegistrationFlowResponse{}, err
 	}
 
-	var session Session
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &session); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	// create response
+	response := GetRegistrationFlowResponse{
+		Header: kratosResp.Header,
+		RegistrationFlow: RegistrationFlow{
+			FlowID:         kratosRespBody.ID,
+			CsrfToken:      getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			CredentialType: kratosRespBody.Active,
+		},
 	}
-	output.Session = &session
+	if kratosRespBody.Active == CredentialsTypeOIDC {
+		// Set to response the traits that was got from OIDC provider if OIDC callback
+		setTraitsFromUiNodes(&response.RegistrationFlow.Traits, kratosRespBody.Ui.Nodes)
+	} else if kratosRespBody.Active == CredentialsTypePasskey {
+		response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
+	}
 
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	slog.Info(fmt.Sprintf("%v", output.Session))
-	slog.Info(fmt.Sprintf("%v", output.Session.Identity))
-
-	return output, nil
+	return response, nil
 }
 
-// ------------------------- Registration Flow -------------------------
-type RegistrationRenderingType string
-
-const (
-	RegistrationRenderingTypePassword = RegistrationRenderingType("password")
-	RegistrationRenderingTypeOidc     = RegistrationRenderingType("oidc")
-)
-
-type GetRegistrationFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
+// --------------------------------------------------------------------------
+// Create Registration Flow
+// --------------------------------------------------------------------------
+type CreateRegistrationFlowRequest struct {
+	Header   KratosRequestHeader
+	ReturnTo string
 }
 
-type GetRegistrationFlowOutput struct {
-	Cookies           []string
-	FlowID            string
-	RenderingType     RegistrationRenderingType
-	Traits            Traits
-	RequestFromOidc   bool
-	PasskeyCreateData string
-	CsrfToken         string
-	ErrorMessages     []string
+type CreateRegistrationFlowResponse struct {
+	Header           KratosResponseHeader
+	RegistrationFlow RegistrationFlow
 }
 
-func (p *Provider) GetRegistrationFlow(i GetRegistrationFlowInput) (GetRegistrationFlowOutput, error) {
-	var (
-		err    error
-		output GetRegistrationFlowOutput
-	)
-
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_REGISTRATION_FLOW, i.FlowID),
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
-	})
-	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
-	}
-	var kratosRespBody kratosGetRegisrationFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
-	}
-
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
-	}
-
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-	output.RequestFromOidc = false
-
-	// OIDC callbackの場合は、Registration flow の UIに、OIDC Providerから取得したユーザ情報をTraitsにセット
-	slog.Info(kratosRespBody.RequestUrl)
-	if strings.Contains(kratosRespBody.RequestUrl, PATH_SELF_SERVICE_CALLBACK_OIDC) {
-		output.RequestFromOidc = true
-		output.RenderingType = RegistrationRenderingTypeOidc
-		var traits Traits
-		for _, node := range kratosRespBody.Ui.Nodes {
-			slog.Info(fmt.Sprintf("%v", node))
-			if node.Attributes.Name == "traits.email" {
-				traits.Email, _ = node.Attributes.Value.(string)
-			}
-			if node.Attributes.Name == "traits.firstname" {
-				traits.Firstname, _ = node.Attributes.Value.(string)
-			}
-			if node.Attributes.Name == "traits.lastname" {
-				traits.Lastname, _ = node.Attributes.Value.(string)
-			}
-			if node.Attributes.Name == "traits.nickname" {
-				traits.Nickname, _ = node.Attributes.Value.(string)
-			}
-			if node.Attributes.Name == "traits.birthdate" {
-				if birthdate, ok := node.Attributes.Value.(string); ok {
-					traits.Birthdate, _ = time.Parse(pkgVars.birthdateFormat, birthdate)
-				}
-			}
-		}
-		output.Traits = traits
-	} else {
-		output.RenderingType = RegistrationRenderingTypePassword
-		for _, node := range kratosRespBody.Ui.Nodes {
-			if node.Attributes.Name == "passkey_create_data" {
-				output.PasskeyCreateData = node.Attributes.Value.(string)
-			}
-		}
-	}
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	slog.Info(fmt.Sprintf("%v", output))
-
-	return output, nil
+type kratosCreateRegisrationFlowRespnseBody struct {
+	ID     string          `json:"id"`
+	Ui     uiContainer     `json:"ui"`
+	Active CredentialsType `json:"active"`
 }
 
-type CreateRegistrationFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	ReturnTo   string
-}
-
-type CreateRegistrationFlowOutput struct {
-	Cookies           []string
-	FlowID            string
-	RenderingType     RegistrationRenderingType
-	Traits            Traits
-	PasskeyCreateData string
-	CsrfToken         string
-	ErrorMessages     []string
-}
-
-func (p *Provider) CreateRegistrationFlow(i CreateRegistrationFlowInput) (CreateRegistrationFlowOutput, error) {
-	var (
-		err    error
-		output CreateRegistrationFlowOutput
-	)
-
+func (p *Provider) CreateRegistrationFlow(ctx context.Context, r CreateRegistrationFlowRequest) (CreateRegistrationFlowResponse, error) {
+	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_REGISTRATION_FLOW
-	if i.ReturnTo != "" {
-		path = fmt.Sprintf("%s?return_to=%s", path, i.ReturnTo)
+	if r.ReturnTo != "" {
+		path = fmt.Sprintf("%s?return_to=%s", path, r.ReturnTo)
 	}
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       path,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method: http.MethodGet,
+		Path:   path,
+		Header: r.Header,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "CreateRegistrationFlow", "requestKratosPublic error", err)
+		return CreateRegistrationFlowResponse{}, err
 	}
 
-	var kratosRespBody kratosCreateRegisrationFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	// Parse response body
+	var kratosRespBody kratosCreateRegisrationFlowRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, err.Error())
+		return CreateRegistrationFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	// create response
+	response := CreateRegistrationFlowResponse{
+		Header: kratosResp.Header,
+		RegistrationFlow: RegistrationFlow{
+			FlowID:         kratosRespBody.ID,
+			CsrfToken:      getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			CredentialType: kratosRespBody.Active,
+		},
+	}
+	if kratosRespBody.Active == CredentialsTypePasskey {
+		response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
 	}
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-	output.RenderingType = RegistrationRenderingTypePassword
-	for _, node := range kratosRespBody.Ui.Nodes {
-		if node.Attributes.Name == "passkey_create_data" {
-			output.PasskeyCreateData = node.Attributes.Value.(string)
-		}
-	}
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return response, nil
 }
 
-// Registration Flow の送信(完了)
-type UpdateRegistrationFlowInput struct {
-	Cookie          string
-	RemoteAddr      string
-	FlowID          string
-	Password        string
-	CsrfToken       string
-	Method          string
-	Provider        string
-	Traits          Traits
-	PasskeyRegister string
+// --------------------------------------------------------------------------
+// Update Registration Flow
+// --------------------------------------------------------------------------
+type UpdateRegistrationFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
+	Body   UpdateRegistrationFlowRequestBody
 }
 
-type UpdateRegistrationFlowOutput struct {
-	Cookies            []string
+type UpdateRegistrationFlowRequestBody struct {
+	CsrfToken       string  `json:"csrf_token"`
+	Method          string  `json:"method"`
+	Traits          Traits  `json:"traits"`
+	Password        *string `json:"password"`
+	Provider        *string `json:"provider"`
+	PasskeyRegister *string `json:"passkey_register"`
+}
+
+type UpdateRegistrationFlowResponse struct {
+	Header             KratosResponseHeader
 	VerificationFlowID string
 	RedirectBrowserTo  string
-	ErrorMessages      []string
 }
 
-func (p *Provider) UpdateRegistrationFlow(i UpdateRegistrationFlowInput) (UpdateRegistrationFlowOutput, error) {
-	var (
-		output           UpdateRegistrationFlowOutput
-		kratosInputBytes []byte
-		err              error
-	)
+type kratosUpdateRegisrationFlowPasswordRespnseBody struct {
+	ContinueWith []continueWith `json:"continue_with"`
+	// Identity     Identity
+	// Session      Session
+	// SessionToken string
+}
 
-	// Update Registration Flow
-	// https://www.ory.sh/docs/kratos/reference/api#tag/frontend/operation/updateRegistrationFlow
-	// supported method: password, oidc
-	if i.Method == "password" {
-		kratosInput := kratosUpdateRegistrationFlowPasswordMethodRequest{
-			CsrfToken: i.CsrfToken,
-			Method:    i.Method,
-			Traits:    i.Traits,
-			Password:  i.Password,
+func (p *Provider) UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest) (UpdateRegistrationFlowResponse, error) {
+	// valiate parameter
+	if r.Body.Method == "password" {
+		if r.Body.Password == nil {
+			return UpdateRegistrationFlowResponse{}, errors.New("missing password in body")
 		}
-		kratosInputBytes, err = json.Marshal(kratosInput)
-		if err != nil {
-			slog.Error("MarshalError", "Error", err)
-			return output, err
+	} else if r.Body.Method == "oidc" {
+		if r.Body.Provider == nil {
+			return UpdateRegistrationFlowResponse{}, errors.New("missing provider in body")
 		}
-	} else if i.Method == "oidc" {
-		kratosInput := kratosUpdateRegistrationFlowOidcMethodRequest{
-			CsrfToken: i.CsrfToken,
-			Method:    i.Method,
-			Provider:  i.Provider,
-			Traits:    i.Traits,
-		}
-		kratosInputBytes, err = json.Marshal(kratosInput)
-		if err != nil {
-			slog.Error("MarshalError", "Error", err)
-			return output, err
-		}
-	} else if i.Method == "passkey" {
-		kratosInput := kratosUpdateRegistrationFlowPasskeyMethodRequest{
-			CsrfToken:       i.CsrfToken,
-			Method:          i.Method,
-			Traits:          i.Traits,
-			PasskeyRegister: i.PasskeyRegister,
-		}
-		slog.Info("passkey input", "method", i.Method)
-		kratosInputBytes, err = json.Marshal(kratosInput)
-		if err != nil {
-			slog.Error("MarshalError", "Error", err)
-			return output, err
+	} else if r.Body.Method == "passkey" {
+		if r.Body.PasskeyRegister == nil {
+			return UpdateRegistrationFlowResponse{}, errors.New("missing passkey register in body")
 		}
 	} else {
-		slog.Error("Invalid method", "Method", i.Method)
-		return output, fmt.Errorf("invalid method: %s", i.Method)
+		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "Method", r.Body.Method)
+		return UpdateRegistrationFlowResponse{}, fmt.Errorf("invalid method: %s", r.Body.Method)
 	}
 
-	slog.Info(string(kratosInputBytes))
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodPost,
-		Path:       fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW, i.FlowID),
-		BodyBytes:  kratosInputBytes,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
-	})
+	// Request to kratos
+	bodyBytes, err := json.Marshal(r.Body)
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
+		return UpdateRegistrationFlowResponse{}, err
 	}
-	slog.Info(fmt.Sprintf("%d", kratosOutput.StatusCode))
-
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateRegistrationFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
-
-		} else if kratosOutput.StatusCode == http.StatusUnprocessableEntity {
-			var browserLocationChangeRequired errorBrowserLocationChangeRequired
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &browserLocationChangeRequired); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", browserLocationChangeRequired))
-
-			// browser location changeが返却された場合は、リダイレクト先URLを設定
-			output.RedirectBrowserTo = browserLocationChangeRequired.RedirectBrowserTo
-
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method:    http.MethodPost,
+		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW, r.FlowID),
+		BodyBytes: bodyBytes,
+		Header:    r.Header,
+	})
+	var redirectBrowserTo string
+	if err != nil {
+		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
+			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
+			slog.ErrorContext(ctx, "UpdateRegistrationFlow", "requestKratosPublic error", err)
+			return UpdateRegistrationFlowResponse{}, err
 		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-		return output, err
 	}
 
-	var flowPasswordResponse kratosUpdateRegisrationFlowPasswordRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &flowPasswordResponse); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	// Parse response body
+	var kratosRespBody kratosUpdateRegisrationFlowPasswordRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
+		return UpdateRegistrationFlowResponse{}, err
 	}
 
-	slog.Info(fmt.Sprintf("%v", flowPasswordResponse))
-	for _, c := range flowPasswordResponse.ContinueWith {
-		slog.Info(fmt.Sprintf("%v", c))
+	// Create response
+	response := UpdateRegistrationFlowResponse{
+		Header:            kratosResp.Header,
+		RedirectBrowserTo: redirectBrowserTo,
+	}
+	for _, c := range kratosRespBody.ContinueWith {
 		if c.Action == "show_verification_ui" {
-			output.VerificationFlowID = c.Flow.ID
+			response.VerificationFlowID = c.Flow.ID
 		}
 	}
 
-	slog.Info(output.VerificationFlowID)
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return response, nil
 }
 
-// ------------------------- Verification Flow -------------------------
-type GetVerificationFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
+// --------------------------------------------------------------------------
+// Get Verification Flow
+// --------------------------------------------------------------------------
+type GetVerificationFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
 }
 
-type GetVerificationFlowOutput struct {
-	Cookies       []string
-	FlowID        string
-	IsUsedFlow    bool
-	CsrfToken     string
-	ErrorMessages []string
+type GetVerificationFlowResponse struct {
+	Header           KratosResponseHeader
+	VerificationFlow VerificationFlow
 }
 
-func (p *Provider) GetVerificationFlow(i GetVerificationFlowInput) (GetVerificationFlowOutput, error) {
-	var (
-		err    error
-		output GetVerificationFlowOutput
-	)
+type kratosGetVerificationFlowRespnseBody struct {
+	ID    string      `json:"id"`
+	Ui    uiContainer `json:"ui"`
+	State string      `json:"state"`
+}
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_VERIFICATION_FLOW, i.FlowID),
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+func (p *Provider) GetVerificationFlow(ctx context.Context, r GetVerificationFlowRequest) (GetVerificationFlowResponse, error) {
+	// Request to kratos
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_VERIFICATION_FLOW, r.FlowID),
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
-	}
-	var kratosRespBody kratosGetVerificationFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+		slog.ErrorContext(ctx, "GetVerificationFlow", "requestKratosPublic error", err)
+		return GetVerificationFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	// Parse response body
+	var kratosRespBody kratosGetVerificationFlowRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GetVerificationFlow", "json unmarshal error", err)
+		return GetVerificationFlowResponse{}, err
 	}
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-
-	// flow　が使用済みかチェック
-	if kratosRespBody.State == "passed_challenge" {
-		output.IsUsedFlow = true
+	// create response
+	response := GetVerificationFlowResponse{
+		Header: kratosResp.Header,
+		VerificationFlow: VerificationFlow{
+			FlowID:    kratosRespBody.ID,
+			CsrfToken: getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			State:     kratosRespBody.State,
+		},
 	}
+	// if kratosRespBody.State == "passed_challenge" {
+	// 	verificationFlow.IsUsedFlow = true
+	// }
 
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return response, nil
 }
 
-type CreateVerificationFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	ReturnTo   string
+// --------------------------------------------------------------------------
+// Create Verification Flow
+// --------------------------------------------------------------------------
+type CreateVerificationBrowserRequest struct {
+	Header   KratosRequestHeader
+	ReturnTo string
 }
 
-type CreateVerificationFlowOutput struct {
-	Cookies       []string
-	FlowID        string
-	CsrfToken     string
-	ErrorMessages []string
+type CreateVerificationFlowResponse struct {
+	Header           KratosResponseHeader
+	VerificationFlow VerificationFlow
 }
 
-func (p *Provider) CreateVerificationFlow(i CreateVerificationFlowInput) (CreateVerificationFlowOutput, error) {
-	var (
-		err    error
-		output CreateVerificationFlowOutput
-	)
+type kratosCreateVerificationFlowRespnseBody struct {
+	ID string      `json:"id"`
+	Ui uiContainer `json:"ui"`
+}
 
+func (p *Provider) CreateVerificationFlow(ctx context.Context, r CreateVerificationBrowserRequest) (CreateVerificationFlowResponse, error) {
+	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_VERIFICATION_FLOW
-	if i.ReturnTo != "" {
-		path = fmt.Sprintf("%s?return_to=%s", path, i.ReturnTo)
+	if r.ReturnTo != "" {
+		path = fmt.Sprintf("%s?return_to=%s", path, r.ReturnTo)
 	}
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       path,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method: http.MethodGet,
+		Path:   path,
+		Header: r.Header,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "CreateVerificationFlow", "requestKratosPublic error", err)
+		return CreateVerificationFlowResponse{}, err
 	}
 
-	var kratosRespBody kratosCreateVerificationFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	// Parse response body
+	var kratosRespBody kratosCreateVerificationFlowRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GetVerificationFlow", "json unmarshal error", err)
+		return CreateVerificationFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	response := CreateVerificationFlowResponse{
+		Header: kratosResp.Header,
+		VerificationFlow: VerificationFlow{
+			FlowID:    kratosRespBody.ID,
+			CsrfToken: getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+		},
 	}
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return response, nil
 }
 
-// Verification Flow の送信(完了)
-type UpdateVerificationFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
-	Code       string
-	Email      string
-	CsrfToken  string
+// --------------------------------------------------------------------------
+// Update Verification Flow
+// --------------------------------------------------------------------------
+type UpdateVerificationFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
+	Body   UpdateVerificationFlowRequestBody
 }
 
-type UpdateVerificationFlowOutput struct {
-	Cookies       []string
-	ErrorMessages []string
+type kratosUpdateVerificationFlowRequestBody struct {
+	Method    string `json:"method"`
+	Email     string `json:"email"`
+	Code      string `json:"code"`
+	CsrfToken string `json:"csrf_token"`
 }
 
-func (p *Provider) UpdateVerificationFlow(i UpdateVerificationFlowInput) (UpdateVerificationFlowOutput, error) {
-	var (
-		output      UpdateVerificationFlowOutput
-		kratosInput kratosUpdateVerificationFlowRequest
-	)
+type UpdateVerificationFlowRequestBody struct {
+	Code      string
+	Email     string
+	CsrfToken string
+}
 
-	// email設定時は、Verification Flowを更新して、アカウント検証メールを送信
-	// code設定時は、Verification Flowを完了
-	if i.Email != "" && i.Code == "" {
-		kratosInput = kratosUpdateVerificationFlowRequest{
+type UpdateVerificationFlowResponse struct {
+	Header KratosResponseHeader
+	Flow   VerificationFlow
+}
+
+type kratosUpdateVerificationFlowResponseBody struct {
+	ID    string      `json:"id"`
+	Ui    uiContainer `json:"ui,omitempty"`
+	State string      `json:"state"`
+}
+
+func (p *Provider) UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest) (UpdateVerificationFlowResponse, error) {
+	// valiate and collect parameter
+	//   email設定時は、Verification Flowを更新して、アカウント検証メールを送信
+	//   code設定時は、Verification Flowを完了
+	var kratosRequestBody kratosUpdateVerificationFlowRequestBody
+	if r.Body.Email != "" && r.Body.Code == "" {
+		kratosRequestBody = kratosUpdateVerificationFlowRequestBody{
 			Method:    "code",
-			Email:     i.Email,
-			CsrfToken: i.CsrfToken,
+			Email:     r.Body.Email,
+			CsrfToken: r.Body.CsrfToken,
 		}
-	} else if i.Email == "" && i.Code != "" {
-		kratosInput = kratosUpdateVerificationFlowRequest{
+	} else if r.Body.Email == "" && r.Body.Code != "" {
+		kratosRequestBody = kratosUpdateVerificationFlowRequestBody{
 			Method:    "code",
-			Code:      i.Code,
-			CsrfToken: i.CsrfToken,
+			Code:      r.Body.Code,
+			CsrfToken: r.Body.CsrfToken,
 		}
 	} else {
-		err := fmt.Errorf("parameter convination error. email: %s, code: %s", i.Email, i.Code)
-		slog.Error("Parameter convination error.", "email", i.Email, "code", i.Code)
-		return output, err
-	}
-	kratosInputBytes, err := json.Marshal(kratosInput)
-	if err != nil {
-		slog.Error("MarshalError", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "parameter convination error.", "email", r.Body.Email, "code", r.Body.Code)
+		return UpdateVerificationFlowResponse{}, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
 	}
 
-	// Verification Flow の送信(完了)
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodPost,
-		Path:       fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_VERIFICATION_FLOW, i.FlowID),
-		BodyBytes:  kratosInputBytes,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	// Request to kratos
+	kratosInputBytes, err := json.Marshal(kratosRequestBody)
+	if err != nil {
+		slog.ErrorContext(ctx, "UpdateVerificationFlow", "json unmarshal error", err)
+		return UpdateVerificationFlowResponse{}, err
+	}
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method:    http.MethodPost,
+		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_VERIFICATION_FLOW, r.FlowID),
+		BodyBytes: kratosInputBytes,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateVerificationFlow", "requestKratosPublic error", err)
+		return UpdateVerificationFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateVerificationFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
-
-		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	// Parse response body
+	var kratosRespBody kratosUpdateVerificationFlowResponseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GetVerificationFlow", "json unmarshal error", err)
+		return UpdateVerificationFlowResponse{}, err
 	}
 
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-	return output, nil
+	// create response
+	response := UpdateVerificationFlowResponse{
+		Header: kratosResp.Header,
+		Flow: VerificationFlow{
+			FlowID:    kratosRespBody.ID,
+			CsrfToken: getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			State:     kratosRespBody.State,
+		},
+	}
+	// if kratosRespBody.State == "passed_challenge" {
+	// 	response.Flow.IsUsedFlow = true
+	// }
+
+	return response, nil
 }
 
-// ------------------------- Login Flow -------------------------
-type GetLoginFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
+// --------------------------------------------------------------------------
+// Get Login Flow
+// --------------------------------------------------------------------------
+type GetLoginFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
 }
 
-type GetLoginFlowOutput struct {
-	Cookies             []string
-	FlowID              string
-	PasskeyChallenge    string
-	CsrfToken           string
-	ErrorMessages       []string
-	DuplicateIdentifier string
+type GetLoginFlowResponse struct {
+	Header    KratosResponseHeader
+	LoginFlow LoginFlow
 }
 
-func (p *Provider) GetLoginFlow(i GetLoginFlowInput) (GetLoginFlowOutput, error) {
-	var (
-		err    error
-		output GetLoginFlowOutput
-	)
+type kratosGetLoginFlowRespnseBody struct {
+	ID    string      `json:"id"`
+	Ui    uiContainer `json:"ui"`
+	State string      `json:"state"`
+}
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_LOGIN_FLOW, i.FlowID),
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+func (p *Provider) GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowResponse, error) {
+	// Request to kratos
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_LOGIN_FLOW, r.FlowID),
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
-	}
-	var kratosRespBody kratosGetLoginFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+		slog.ErrorContext(ctx, "GeLoginFlow", "requestKratosPublic error", err)
+		return GetLoginFlowResponse{}, err
 	}
 
-	slog.Info(string(kratosOutput.BodyBytes))
-
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateLoginFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
-
-		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	// Parse response body
+	var FlowkratosRespBody kratosGetLoginFlowRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &FlowkratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GeLoginFlow", "json unmarshal error", err)
+		return GetLoginFlowResponse{}, err
 	}
 
-	output.DuplicateIdentifier = getDuplicateIdentifierFromUi(kratosRespBody.Ui)
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-	for _, node := range kratosRespBody.Ui.Nodes {
+	// create response
+	response := GetLoginFlowResponse{
+		Header: kratosResp.Header,
+		LoginFlow: LoginFlow{
+			DuplicateIdentifier: getDuplicateIdentifierFromUi(FlowkratosRespBody.Ui),
+			FlowID:              FlowkratosRespBody.ID,
+			CsrfToken:           getCsrfTokenFromFlowUi(FlowkratosRespBody.Ui),
+		},
+	}
+	for _, node := range FlowkratosRespBody.Ui.Nodes {
 		if node.Attributes.Name == "passkey_challenge" {
-			output.PasskeyChallenge = node.Attributes.Value.(string)
+			response.LoginFlow.PasskeyChallenge = node.Attributes.Value.(string)
 		}
 	}
 
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return response, nil
 }
 
-type CreateLoginFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
-	Refresh    bool
-	ReturnTo   string
+// --------------------------------------------------------------------------
+// Create Login Flow
+// --------------------------------------------------------------------------
+type CreateLoginFlowRequest struct {
+	Header   KratosRequestHeader
+	Refresh  bool
+	ReturnTo string
 }
 
-type CreateLoginFlowOutput struct {
-	Cookies          []string
-	FlowID           string
-	PasskeyChallenge string
-	CsrfToken        string
-	ErrorMessages    []string
+type CreateLoginFlowResponse struct {
+	Header    KratosResponseHeader
+	LoginFlow LoginFlow
 }
 
-func (p *Provider) CreateLoginFlow(i CreateLoginFlowInput) (CreateLoginFlowOutput, error) {
-	var (
-		err    error
-		output CreateLoginFlowOutput
-	)
+type kratosCreateLoginFlowRespnseBody struct {
+	ID string      `json:"id"`
+	Ui uiContainer `json:"ui"`
+}
 
+func (p *Provider) CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLoginFlowResponse, error) {
+	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_LOGIN_FLOW
-	if i.ReturnTo != "" {
-		path = fmt.Sprintf("%s?return_to=%s", path, i.ReturnTo)
+	if r.ReturnTo != "" {
+		path = fmt.Sprintf("%s?return_to=%s", path, r.ReturnTo)
 	}
-	if i.Refresh {
+	if r.Refresh {
 		path = fmt.Sprintf("%s?refresh=true", path)
 	}
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       path,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+		Method: http.MethodGet,
+		Path:   path,
+		Header: r.Header,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "GetLoginFlow", "requestKratosPublic error", err)
+		return CreateLoginFlowResponse{}, err
 	}
 
-	var kratosRespBody kratosCreateLoginFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	// Parse response body
+	var createLoginFlowResp kratosCreateLoginFlowRespnseBody
+	if err := json.Unmarshal(kratosResp.BodyBytes, &createLoginFlowResp); err != nil {
+		slog.ErrorContext(ctx, err.Error())
+		return CreateLoginFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
+	// create response
+	response := CreateLoginFlowResponse{
+		Header: kratosResp.Header,
+		LoginFlow: LoginFlow{
+			FlowID:    createLoginFlowResp.ID,
+			CsrfToken: getCsrfTokenFromFlowUi(createLoginFlowResp.Ui),
+		},
 	}
-
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-	for _, node := range kratosRespBody.Ui.Nodes {
+	for _, node := range createLoginFlowResp.Ui.Nodes {
 		if node.Attributes.Name == "passkey_challenge" {
-			output.PasskeyChallenge = node.Attributes.Value.(string)
+			response.LoginFlow.PasskeyChallenge = node.Attributes.Value.(string)
 		}
 	}
 
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return response, nil
 }
 
 type UpdateLoginFlowInput struct {
-	Cookie     string
-	RemoteAddr string
 	FlowID     string
 	CsrfToken  string
 	Identifier string
 	Password   string
 }
 
-type UpdateLoginFlowOutput struct {
-	Cookies           []string
-	RedirectBrowserTo string
-	ErrorMessages     []string
-}
-
 // Login Flow の送信(完了)
-func (p *Provider) UpdateLoginFlow(i UpdateLoginFlowInput) (UpdateLoginFlowOutput, error) {
-	var (
-		output           UpdateLoginFlowOutput
-		kratosInputBytes []byte
-		err              error
-	)
-
+func (p *Provider) UpdateLoginFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i UpdateLoginFlowInput) (UpdateLoginFlowResponse, error) {
 	kratosInput := kratosUpdateLoginFlowPasswordRequest{
 		Method:     "password",
 		Identifier: i.Identifier,
 		Password:   i.Password,
 		CsrfToken:  i.CsrfToken,
 	}
-	kratosInputBytes, err = json.Marshal(kratosInput)
+	kratosInputBytes, err := json.Marshal(kratosInput)
 	if err != nil {
-		slog.Error("MarshalError", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
+		return UpdateLoginFlowResponse{}, err
 	}
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodPost,
-		Path:       fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW, i.FlowID),
-		BodyBytes:  kratosInputBytes,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	kratosResp, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method:    http.MethodPost,
+		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW, i.FlowID),
+		BodyBytes: kratosInputBytes,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateLoginFlow", "requestKratosPublic error", err)
+		return UpdateLoginFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateLoginFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
-
-		} else if kratosOutput.StatusCode == http.StatusUnprocessableEntity {
-			var browserLocationChangeRequired errorBrowserLocationChangeRequired
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &browserLocationChangeRequired); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", browserLocationChangeRequired))
-
-			// browser location changeが返却された場合は、リダイレクト先URLを設定
-			output.RedirectBrowserTo = browserLocationChangeRequired.RedirectBrowserTo
-
-		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-		return output, err
+	kratosError := getKratosError(ctx, kratosResp.BodyBytes, kratosResp.StatusCode)
+	if kratosError != nil {
+		slog.ErrorContext(ctx, "UpdateLoginFlow", "kratos error", kratosError)
+		return UpdateLoginFlowResponse{}, fmt.Errorf("kratos error: %w", kratosError)
 	}
 
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
+	var updateRegistrationFlowResp kratosUpdateRegisrationFlowPasswordRespnse
+	if err := json.Unmarshal(kratosResp.BodyBytes, &updateRegistrationFlowResp); err != nil {
+		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
+		return UpdateLoginFlowResponse{}, err
+	}
 
-	return output, nil
+	// Cookie引き継ぎ
+	r.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
+
+	return UpdateLoginFlowResponse{
+		RedirectBrowserTo: updateRegistrationFlowResp.RedirectBrowserTo,
+	}, nil
 }
 
 type UpdateOidcLoginFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
-	CsrfToken  string
-	Provider   string
+	FlowID    string
+	CsrfToken string
+	Provider  string
 }
 
-type UpdateOidcLoginFlowOutput struct {
-	Cookies           []string
-	RedirectBrowserTo string
-	ErrorMessages     []string
-}
-
-func (p *Provider) UpdateOidcLoginFlow(i UpdateOidcLoginFlowInput) (UpdateOidcLoginFlowOutput, error) {
-	var (
-		output           UpdateOidcLoginFlowOutput
-		kratosInputBytes []byte
-		err              error
-	)
-
+func (p *Provider) UpdateOidcLoginFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i UpdateOidcLoginFlowInput) (UpdateLoginFlowResponse, error) {
 	kratosInput := kratosUpdateLoginFlowOidcRequest{
 		Method:    "oidc",
 		CsrfToken: i.CsrfToken,
 		Provider:  i.Provider,
 	}
-	kratosInputBytes, err = json.Marshal(kratosInput)
+	kratosInputBytes, err := json.Marshal(kratosInput)
 	if err != nil {
-		slog.Error("MarshalError", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
+		return UpdateLoginFlowResponse{}, err
 	}
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodPost,
-		Path:       fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW, i.FlowID),
-		BodyBytes:  kratosInputBytes,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	_, err = p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method:    http.MethodPost,
+		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW, i.FlowID),
+		BodyBytes: kratosInputBytes,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateLoginFlow", "requestKratosPublic error", err)
+		return UpdateLoginFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateLoginFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
+	// Cookie引き継ぎ
+	r.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
 
-		} else if kratosOutput.StatusCode == http.StatusUnprocessableEntity {
-			var browserLocationChangeRequired errorBrowserLocationChangeRequired
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &browserLocationChangeRequired); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", browserLocationChangeRequired))
-
-			// browser location changeが返却された場合は、リダイレクト先URLを設定
-			output.RedirectBrowserTo = browserLocationChangeRequired.RedirectBrowserTo
-
-		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-		return output, err
-	}
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return UpdateLoginFlowResponse{}, nil
 }
 
-// ------------------------- Logout Flow -------------------------
-type LogoutFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-}
+// ------------------------- Logout -------------------------
 
-type LogoutFlowOutput struct {
-	Cookies       []string
-	ErrorMessages []string
-}
-
-func (p *Provider) Logout(i LogoutFlowInput) (LogoutFlowOutput, error) {
-	var (
-		output LogoutFlowOutput
-		err    error
-	)
-
-	// create flow
-	kratosOutputCreateFlow, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       PATH_SELF_SERVICE_GET_LOGOUT_FLOW,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+func (p *Provider) Logout(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	kratosRespCreateFlow, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method: http.MethodGet,
+		Path:   PATH_SELF_SERVICE_GET_LOGOUT_FLOW,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "Logout", "requestKratosPublic error", err)
+		return err
 	}
+
 	var kratosRespBodyCreateFlow kratosCreateLogoutFlowRespnse
-	if err := json.Unmarshal(kratosOutputCreateFlow.BodyBytes, &kratosRespBodyCreateFlow); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	if err := json.Unmarshal(kratosRespCreateFlow.BodyBytes, &kratosRespBodyCreateFlow); err != nil {
+		slog.ErrorContext(ctx, "Logout", "json unmarshal error", err)
+		return err
 	}
 
-	// error handling
-	if kratosOutputCreateFlow.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutputCreateFlow.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutputCreateFlow.Header["Set-Cookie"]
-		return output, err
-	}
-
-	// update flow
-	kratosOutputUpdateFlow, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       fmt.Sprintf("%s?flow=%s&token=%s", PATH_SELF_SERVICE_UPDATE_LOGOUT_FLOW, kratosRespBodyCreateFlow.ID, kratosRespBodyCreateFlow.LogoutToken),
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	updateLogoutResp, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("%s?flow=%s&token=%s", PATH_SELF_SERVICE_UPDATE_LOGOUT_FLOW, kratosRespBodyCreateFlow.ID, kratosRespBodyCreateFlow.LogoutToken),
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "Logout", "requestKratosPublic error", err)
+		return err
 	}
 	var kratosRespBodyUpdateFlow kratosUpdateLogoutFlowRequest
-	if err := json.Unmarshal(kratosOutputUpdateFlow.BodyBytes, &kratosRespBodyUpdateFlow); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	if err := json.Unmarshal(updateLogoutResp.BodyBytes, &kratosRespBodyUpdateFlow); err != nil {
+		slog.ErrorContext(ctx, "Logout", "json unmarshal error", err)
+		return err
 	}
 
-	// error handling
-	if kratosOutputUpdateFlow.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutputUpdateFlow.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutputUpdateFlow.Header["Set-Cookie"]
-		return output, err
-	}
+	// Cookie引き継ぎ
+	r.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
 
-	output.Cookies = kratosOutputUpdateFlow.Header["Set-Cookie"]
-	return output, nil
+	return nil
 }
 
 // ------------------------- Recovery Flow -------------------------
 type GetRecoveryFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
+	FlowID string
 }
 
-type GetRecoveryFlowOutput struct {
-	Cookies       []string
-	FlowID        string
-	CsrfToken     string
-	ErrorMessages []string
-}
-
-func (p *Provider) GetRecoveryFlow(i GetRecoveryFlowInput) (GetRecoveryFlowOutput, error) {
-	var (
-		err    error
-		output GetRecoveryFlowOutput
-	)
-
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_RECOVERY_FLOW, i.FlowID),
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+func (p *Provider) GetRecoveryFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i GetRecoveryFlowInput) (RecoveryFlow, error) {
+	kratosResp, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_RECOVERY_FLOW, i.FlowID),
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "GetRecoveryFlow", "requestKratosPublic error", err)
+		return RecoveryFlow{}, err
 	}
 
-	var kratosRespBody kratosGetRecoveryFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	var getRecoveryFlowResp kratosGetRecoveryFlowRespnse
+	if err := json.Unmarshal(kratosResp.BodyBytes, &getRecoveryFlowResp); err != nil {
+		slog.ErrorContext(ctx, "GetRecoveryFlow", "json unmarshal error", err)
+		return RecoveryFlow{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
-	}
+	var recoveryFlow RecoveryFlow
+	recoveryFlow.FlowID = getRecoveryFlowResp.ID
+	recoveryFlow.CsrfToken = getCsrfTokenFromFlowUi(getRecoveryFlowResp.Ui)
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return recoveryFlow, nil
 }
 
 type CreateRecoveryFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
 }
 
-type CreateRecoveryFlowOutput struct {
-	Cookies       []string
-	FlowID        string
-	CsrfToken     string
-	ErrorMessages []string
-}
-
-func (p *Provider) CreateRecoveryFlow(i CreateRecoveryFlowInput) (CreateRecoveryFlowOutput, error) {
-	var (
-		err    error
-		output CreateRecoveryFlowOutput
-	)
-
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       PATH_SELF_SERVICE_CREATE_RECOVERY_FLOW,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+func (p *Provider) CreateRecoveryFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i CreateRecoveryFlowInput) (RecoveryFlow, error) {
+	kratosResp, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method: http.MethodGet,
+		Path:   PATH_SELF_SERVICE_CREATE_RECOVERY_FLOW,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "CreateRecoveryFlow", "requestKratosPublic error", err)
+		return RecoveryFlow{}, err
 	}
 
-	var kratosRespBody kratosCreateRecoveryFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	var createRecoveryFlowResp kratosCreateRecoveryFlowRespnse
+	if err := json.Unmarshal(kratosResp.BodyBytes, &createRecoveryFlowResp); err != nil {
+		slog.ErrorContext(ctx, "CreateRecoveryFlow", "json unmarshal error", err)
+		return RecoveryFlow{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
-	}
+	var recoveryFlow RecoveryFlow
+	recoveryFlow.FlowID = createRecoveryFlowResp.ID
+	recoveryFlow.CsrfToken = getCsrfTokenFromFlowUi(createRecoveryFlowResp.Ui)
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return recoveryFlow, nil
 }
 
 type UpdateRecoveryFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
-	CsrfToken  string
-	Email      string
-	Code       string
-}
-
-type UpdateRecoveryFlowOutput struct {
-	Cookies           []string
-	RedirectBrowserTo string
-	ErrorMessages     []string
+	FlowID    string
+	CsrfToken string
+	Email     string
+	Code      string
 }
 
 // Recovery Flow の送信(完了)
-func (p *Provider) UpdateRecoveryFlow(i UpdateRecoveryFlowInput) (UpdateRecoveryFlowOutput, error) {
+func (p *Provider) UpdateRecoveryFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i UpdateRecoveryFlowInput) (UpdateRecoveryFlowResponse, error) {
 	var (
-		output      UpdateRecoveryFlowOutput
 		kratosInput kratosUpdateRecoveryFlowRequest
 	)
 
@@ -1224,214 +759,104 @@ func (p *Provider) UpdateRecoveryFlow(i UpdateRecoveryFlowInput) (UpdateRecovery
 			CsrfToken: i.CsrfToken,
 		}
 	} else {
-		err := fmt.Errorf("parameter convination error. email: %s, code: %s", i.Email, i.Code)
-		slog.Error("Parameter convination error.", "email", i.Email, "code", i.Code)
-		return output, err
+		slog.ErrorContext(ctx, "parameter convination error.", "email", i.Email, "code", i.Code)
+		return UpdateRecoveryFlowResponse{}, fmt.Errorf("parameter convination error. email: %s, code: %s", i.Email, i.Code)
 	}
 	kratosInputBytes, err := json.Marshal(kratosInput)
 	if err != nil {
-		slog.Error("MarshalError", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateRecoveryFlow", "json unmarshal error", err)
+		return UpdateRecoveryFlowResponse{}, err
 	}
 
-	// Verification Flow の送信(完了)
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodPost,
-		Path:       fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_GET_RECOVERY_FLOW, i.FlowID),
-		BodyBytes:  kratosInputBytes,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	// Recovery Flow の送信(完了)
+	_, err = p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method:    http.MethodPost,
+		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_GET_RECOVERY_FLOW, i.FlowID),
+		BodyBytes: kratosInputBytes,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateRecoveryFlow", "requestKratosPublic error", err)
+		return UpdateRecoveryFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateSettingsFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
+	// Cookie引き継ぎ
+	r.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
 
-		} else if kratosOutput.StatusCode == http.StatusUnprocessableEntity {
-			var browserLocationChangeRequired errorBrowserLocationChangeRequired
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &browserLocationChangeRequired); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", browserLocationChangeRequired))
-
-			// browser location changeが返却された場合は、リダイレクト先URLを設定
-			output.RedirectBrowserTo = browserLocationChangeRequired.RedirectBrowserTo
-
-		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-		return output, err
-	}
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return UpdateRecoveryFlowResponse{}, nil
 }
 
 // ------------------------- Settings Flow -------------------------
 type GetSettingsFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
+	FlowID string
 }
 
-type GetSettingsFlowOutput struct {
-	Cookies       []string
-	FlowID        string
-	CsrfToken     string
-	ErrorMessages []string
-}
-
-func (p *Provider) GetSettingsFlow(i GetSettingsFlowInput) (GetSettingsFlowOutput, error) {
+func (p *Provider) GetSettingsFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i GetSettingsFlowInput) (SettingsFlow, error) {
 	var (
-		err    error
-		output GetSettingsFlowOutput
+		err error
 	)
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_SETTINGS_FLOW, i.FlowID),
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	kratosResp, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method: http.MethodGet,
+		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_SETTINGS_FLOW, i.FlowID),
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "CreateSettingsFlow", "requestKratosPublic error", err)
+		return SettingsFlow{}, err
 	}
 	var kratosRespBody kratosGetSettingsFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GetSettingsFlow", "json unmarshal error", err)
+		return SettingsFlow{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
-	}
+	var settingsFlow SettingsFlow
+	settingsFlow.FlowID = kratosRespBody.ID
+	settingsFlow.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return settingsFlow, nil
 }
 
 type CreateSettingsFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
 }
 
-type CreateSettingsFlowOutput struct {
-	Cookies       []string
-	FlowID        string
-	CsrfToken     string
-	ErrorMessages []string
-}
-
-func (p *Provider) CreateSettingsFlow(i CreateSettingsFlowInput) (CreateSettingsFlowOutput, error) {
+func (p *Provider) CreateSettingsFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i CreateSettingsFlowInput) (SettingsFlow, error) {
 	var (
-		err    error
-		output CreateSettingsFlowOutput
+		err error
 	)
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodGet,
-		Path:       PATH_SELF_SERVICE_CREATE_SETTINGS_FLOW,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	kratosResp, err := p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method: http.MethodGet,
+		Path:   PATH_SELF_SERVICE_CREATE_SETTINGS_FLOW,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "CreateSettingsFlow", "requestKratosPublic error", err)
+		return SettingsFlow{}, err
 	}
 
 	var kratosRespBody kratosCreateSettingsFlowRespnse
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &kratosRespBody); err != nil {
-		slog.Error(err.Error())
-		return output, err
+	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
+		slog.ErrorContext(ctx, "GetSettingsFlow", "json unmarshal error", err)
+		return SettingsFlow{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-		return output, err
-	}
+	var settingsFlow SettingsFlow
+	settingsFlow.FlowID = kratosRespBody.ID
+	settingsFlow.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
 
-	output.FlowID = kratosRespBody.ID
-	output.CsrfToken = getCsrfTokenFromFlowUi(kratosRespBody.Ui)
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return settingsFlow, nil
 }
 
 type UpdateSettingsFlowInput struct {
-	Cookie     string
-	RemoteAddr string
-	FlowID     string
-	CsrfToken  string
-	Method     string
-	Password   string
-	Traits     Traits
-}
-
-type UpdateSettingsFlowOutput struct {
-	Cookies           []string
-	RedirectBrowserTo string
-	ErrorMessages     []string
+	FlowID    string
+	CsrfToken string
+	Method    string
+	Password  string
+	Traits    Traits
 }
 
 // Settings Flow (password) の送信(完了)
-func (p *Provider) UpdateSettingsFlow(i UpdateSettingsFlowInput) (UpdateSettingsFlowOutput, error) {
+func (p *Provider) UpdateSettingsFlow(ctx context.Context, w http.ResponseWriter, r *http.Request, i UpdateSettingsFlowInput) (UpdateSettingsFlowResponse, error) {
 	var (
-		output      UpdateSettingsFlowOutput
 		kratosInput kratosUpdateSettingsFlowRequest
 		err         error
 	)
@@ -1449,185 +874,32 @@ func (p *Provider) UpdateSettingsFlow(i UpdateSettingsFlowInput) (UpdateSettings
 			Traits:    i.Traits,
 		}
 	} else {
-		err := fmt.Errorf("invalid method: %s", i.Method)
-		slog.Error(err.Error())
-		return output, err
+		slog.ErrorContext(ctx, "UpdateSettingsFlow", "Method", i.Method)
+		return UpdateSettingsFlowResponse{}, fmt.Errorf("invalid method: %s", i.Method)
 	}
 
 	kratosInputBytes, err := json.Marshal(kratosInput)
 	if err != nil {
-		slog.Error("MarshalError", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateSettingsFlow", "json unmarshal error", err)
+		return UpdateSettingsFlowResponse{}, err
 	}
 
-	kratosOutput, err := p.requestKratosPublic(requestKratosInput{
-		Method:     http.MethodPost,
-		Path:       fmt.Sprintf("%s[?flow=%s", PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW, i.FlowID),
-		BodyBytes:  kratosInputBytes,
-		Cookie:     i.Cookie,
-		RemoteAddr: i.RemoteAddr,
+	_, err = p.requestKratosPublic(ctx, w, r, kratosRequest{
+		Method:    http.MethodPost,
+		Path:      fmt.Sprintf("%s[?flow=%s", PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW, i.FlowID),
+		BodyBytes: kratosInputBytes,
 	})
 	if err != nil {
-		slog.Error("requestKratosPublic error", "Error", err)
-		return output, err
+		slog.ErrorContext(ctx, "UpdateSettingsFlow", "requestKratosPublic error", err)
+		return UpdateSettingsFlowResponse{}, err
 	}
 
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		if kratosOutput.StatusCode == http.StatusBadRequest {
-			// status code 400 の場合のレスポンスボディのフォーマットは複数存在する
-			var flow kratosUpdateSettingsFlowBadRequestErrorResponse
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &flow); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", flow))
-			if flow.Error != nil {
-				output.ErrorMessages = getErrorMessagesFromGenericError(*flow.Error)
-			} else if flow.Ui != nil {
-				output.ErrorMessages = getErrorMessagesFromUi(*flow.Ui)
-			} else {
-				slog.Info("Unknown error response format")
-			}
+	// Cookie引き継ぎ
+	r.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
 
-		} else if kratosOutput.StatusCode == http.StatusUnprocessableEntity {
-			var browserLocationChangeRequired errorBrowserLocationChangeRequired
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &browserLocationChangeRequired); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", browserLocationChangeRequired))
-
-			// browser location changeが返却された場合は、リダイレクト先URLを設定
-			output.RedirectBrowserTo = browserLocationChangeRequired.RedirectBrowserTo
-
-		} else {
-			var errGeneric errorGeneric
-			if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-				slog.Error(err.Error())
-				return output, err
-			}
-			slog.Info(fmt.Sprintf("%v", errGeneric))
-			output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		}
-		output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-		return output, err
-	}
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+	return UpdateSettingsFlowResponse{}, nil
 }
 
-type AdminGetIdentityInput struct {
-	ID                string `json:"id"`
-	IncludeCredential string `json:"include_credential"`
-	Cookie            string `json:"cookie"`
-}
-
-type AdminGetIdentityOutput struct {
-	Cookies       []string
-	Identity      Identity `json:"identity"`
-	ErrorMessages []string `json:"error_messages"`
-}
-
-func (p *Provider) AdminGetIdentity(i AdminGetIdentityInput) (AdminGetIdentityOutput, error) {
-	var (
-		output AdminGetIdentityOutput
-		err    error
-	)
-
-	kratosOutput, err := p.requestKratosAdmin(requestKratosInput{
-		Method: http.MethodGet,
-		Path:   fmt.Sprintf("/admin/identities/%s?include_credential=%s", i.ID, i.IncludeCredential),
-		// Cookie: i.Cookie,
-	})
-	if err != nil {
-		slog.Error("requestKratosAdmin error", "Error", err)
-		return output, err
-	}
-
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-	}
-
-	var identity Identity
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &identity); err != nil {
-		slog.Error(err.Error())
-		return output, err
-	}
-	output.Identity = identity
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
-}
-
-type AdminListIdentitiesInput struct {
-	Cookie               string `json:"cookie"`
-	CredentialIdentifier string `json:"credential_identifier"`
-}
-
-type AdminListIdentitiesOutput struct {
-	Cookies       []string
-	Identities    []Identity `json:"identities"`
-	ErrorMessages []string   `json:"error_messages"`
-}
-
-func (p *Provider) AdminListIdentities(i AdminListIdentitiesInput) (AdminListIdentitiesOutput, error) {
-	var (
-		output AdminListIdentitiesOutput
-		err    error
-	)
-
-	slog.Debug("AdminListIdentities", "input", i)
-
-	kratosOutput, err := p.requestKratosAdmin(requestKratosInput{
-		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?credential_identifier=%s", PATH_ADMIN_LIST_IDENTITIES, i.CredentialIdentifier),
-		// Cookie: i.Cookie,
-	})
-	if err != nil {
-		slog.Error("requestKratosAdmin error", "Error", err)
-		return output, err
-	}
-
-	// error handling
-	if kratosOutput.StatusCode != http.StatusOK {
-		slog.Debug("AdminListIdentities failed", "kratosOutput", kratosOutput)
-		slog.Debug(string(kratosOutput.BodyBytes))
-		var errGeneric errorGeneric
-		if err := json.Unmarshal(kratosOutput.BodyBytes, &errGeneric); err != nil {
-			slog.Error(err.Error())
-			return output, err
-		}
-		slog.Info(fmt.Sprintf("%v", errGeneric))
-		output.ErrorMessages = getErrorMessagesFromGenericError(errGeneric.Error)
-		return output, err
-	}
-
-	slog.Debug("AdminListIdentities succeeded", "kratosOutput", kratosOutput)
-	slog.Debug(string(kratosOutput.BodyBytes))
-
-	var identities []Identity
-	if err := json.Unmarshal(kratosOutput.BodyBytes, &identities); err != nil {
-		slog.Error(err.Error())
-		return output, err
-	}
-	output.Identities = identities
-
-	// browser flowでは、kartosから受け取ったcookieをそのままブラウザへ返却する
-	output.Cookies = kratosOutput.Header["Set-Cookie"]
-
-	return output, nil
+func jsonMarshal[T any](i T) ([]byte, error) {
+	return json.Marshal(i)
 }

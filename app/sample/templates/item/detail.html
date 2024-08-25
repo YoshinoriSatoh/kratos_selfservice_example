@@ -3,24 +3,55 @@
 
 <div id="item-detail" class="container my-4">
   <div class="grid grid-cols-12">
-    <div class="container col-span-6">
-      <img class="mx-auto" src="{{.Image}}" alt="Burger" />
+    <div class="col-span-12 sm:col-span-12 md:col-span-12 lg:col-span-6">
+      <img class="mx-auto max-w-lg" src="{{.Image}}" alt="Burger" />
     </div>
-    <div class="container col-span-6 ml-8">
+    <div class="col-span-12 sm:col-span-12 md:col-span-12 lg:col-span-6 ml-8">
       <div class="mb-2 text-2xl">{{.Name}}</div>
       <div class="mb-2 text-2xl">{{.Price}}円</div>
-      <div class="mb-4">
+      <div class="flex items-center md:w-auto">
         <button 
-          class="btn btn-accent"
+          disabled type="button" 
+          class="py-2.5 px-5 me-2 text-sm font-medium text-white bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-white focus:z-10 focus:ring-4 focus:outline-none focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 inline-flex items-center">
+          <svg class="w-6 h-6 " aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.01 6.001C6.5 1 1 8 5.782 13.001L12.011 20l6.23-7C23 8 17.5 1 12.01 6.002Z"/>
+          </svg>
+          2
+        </button>
+        <button 
+          disabled type="button" 
+          class="py-2.5 px-5 me-2 text-sm font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 inline-flex items-center">
+          <svg class="w-6 h-6" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.556 8.5h8m-8 3.5H12m7.111-7H4.89a.896.896 0 0 0-.629.256.868.868 0 0 0-.26.619v9.25c0 .232.094.455.26.619A.896.896 0 0 0 4.89 16H9l3 4 3-4h4.111a.896.896 0 0 0 .629-.256.868.868 0 0 0 .26-.619v-9.25a.868.868 0 0 0-.26-.619.896.896 0 0 0-.63-.256Z"/>
+          </svg>
+          コメント
+        </button>
+        <button 
+          disabled type="button" 
+          class="py-2.5 px-5 me-2 text-sm font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:outline-none focus:ring-blue-700 focus:text-blue-700 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700 inline-flex items-center">
+          <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7 7V5"/>
+          </svg>
+          保存
+        </button>
+      </div>
+
+      <div class="mt-4">
+        <button 
+          type="button" 
+          class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center inline-flex items-center me-2 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
           hx-get="/item/{{.ItemID}}/purchase"
           hx-swap="outerHTML" 
-          hx-target="#item-detail">購入手続きへ</button>
+          hx-target="#item-detail">
+          <svg class="w-3.5 h-3.5 me-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 21">
+            <path d="M15 12a1 1 0 0 0 .962-.726l2-7A1 1 0 0 0 17 3H3.77L3.175.745A1 1 0 0 0 2.208 0H1a1 1 0 0 0 0 2h.438l.6 2.255v.019l2 7 .746 2.986A3 3 0 1 0 9 17a2.966 2.966 0 0 0-.184-1h2.368c-.118.32-.18.659-.184 1a3 3 0 1 0 3-3H6.78l-.5-2H15Z"/>
+          </svg>
+          購入手続きへ
+        </button>
       </div>
-      <div class="mb-4 container">
-        <div class="my-4 text-xl text-gray-400">商品の説明</div>
-        <div class="text-sm">
-          <pre>{{.Description}}</pre>
-        </div>
+      <div class="mt-8">
+        <div class="my-4 text-xl text-gray-400 font-semibold">商品の説明</div>
+        <p>{{.Description}}</p>
       </div>
     </div>
   </div> 

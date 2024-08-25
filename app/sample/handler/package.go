@@ -5,20 +5,26 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/BurntSushi/toml"
+	"github.com/Masterminds/sprig/v3"
 	"github.com/go-playground/locales/ja"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
 	ja_translations "github.com/go-playground/validator/v10/translations/ja"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 var pkgVars packageVariables
 
 type packageVariables struct {
-	tmpl            *template.Template
-	validate        *validator.Validate
-	trans           ut.Translator
-	cookieParams    CookieParams
-	birthdateFormat string
+	tmpl         *template.Template
+	validate     *validator.Validate
+	trans        ut.Translator
+	cookieParams CookieParams
+	printer      *message.Printer
+	loc          *i18n.Localizer
 }
 
 type CookieParams struct {
@@ -29,19 +35,37 @@ type CookieParams struct {
 }
 
 type InitInput struct {
-	CookieParams    CookieParams
-	BirthdateFormat string
+	CookieParams CookieParams
 }
 
 func Init(i InitInput) {
 	loadTemplate()
 	initValidator()
 	pkgVars.cookieParams = i.CookieParams
-	pkgVars.birthdateFormat = i.BirthdateFormat
+	pkgVars.printer = message.NewPrinter(language.Japanese)
+
+	// i18n
+	bundle := i18n.NewBundle(language.Japanese)
+	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
+	bundle.LoadMessageFile("active.ja.toml")
+
+	pkgVars.loc = i18n.NewLocalizer(bundle, language.Japanese.String())
 }
 
 func loadTemplate() {
-	pkgVars.tmpl = template.Must(template.New("").ParseGlob("templates/**/*.html"))
+	// funcMap := template.FuncMap{
+	// 	"htmlEscape": func(in string) string {
+	// 		out := template.HTMLEscapeString(in)
+	// 		fmt.Println(out)
+	// 		return out
+	// 	},
+	// 	"applyBrNewline": func(in string) string {
+	// 		out := strings.Replace(in, "\n", "<br>", -1)
+	// 		fmt.Println(out)
+	// 		return out
+	// 	},
+	// }
+	pkgVars.tmpl = template.Must(template.New("").Funcs(sprig.FuncMap()).ParseGlob("templates/**/*.html"))
 	pkgVars.tmpl = template.Must(pkgVars.tmpl.ParseGlob("templates/**/**/*.html"))
 }
 
@@ -51,6 +75,7 @@ func initValidator() {
 	pkgVars.trans, _ = uni.GetTranslator("ja")
 
 	pkgVars.validate = validator.New(validator.WithRequiredStructEnabled())
+	pkgVars.validate.RegisterValidation("date", validateDate)
 	pkgVars.validate.RegisterTagNameFunc(func(field reflect.StructField) string {
 		fieldName := field.Tag.Get("ja")
 		if fieldName == "-" {
@@ -62,10 +87,9 @@ func initValidator() {
 	if err != nil {
 		panic(err)
 	}
-	pkgVars.validate.RegisterValidation("birthdate", validateBirthdate)
 }
 
-func validateBirthdate(fl validator.FieldLevel) bool {
-	_, err := time.Parse(pkgVars.birthdateFormat, fl.Field().String())
+func validateDate(fl validator.FieldLevel) bool {
+	_, err := time.Parse("2006-01-02", fl.Field().String())
 	return err == nil
 }

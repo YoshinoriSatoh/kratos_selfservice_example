@@ -10,79 +10,86 @@
     type="hidden"
     value="{{.CsrfToken}}"
   />
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">メールアドレス</span>
-      </div>
-      <input 
-        id="email"
-        name="email" 
-        type="email"
-        required
-        value="{{.Email}}"
-        class="input input-bordered"
-      >
-    </label>
 
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">氏名</span>
-      </div>
-      <div class="grid grid-cols-12">
-        <div class="container col-span-6">
-          <input 
-            id="lastname"
-            name="lastname" 
-            value="{{.Lastname}}"
-            class="input input-bordered"
-          />
-          <div class="text-red-500 text-xs">{{.ValidationFieldError.Lastname}}</div>
-        </div>
-        <div class="container col-span-6">
-          <input 
-            id="firstname"
-            name="firstname" 
-            value="{{.Firstname}}"
-            class="input input-bordered"
-          />
-          <div class="text-red-500 text-xs">{{.ValidationFieldError.Firstname}}</div>
-        </div>
-      </div>
-    </label>
+  <div class="mb-6">
+    <label for="email" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">メールアドレス</label>
+    <input 
+      type="email" 
+      id="email" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      placeholder="john.doe@company.com" 
+      name="traits.email" 
+      value="{{.Email}}"
+    />
+  </div> 
 
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">ニックネーム</span>
-      </div>
+  <div class="grid gap-6 mb-6 md:grid-cols-2">
+    <div>
+      <label for="lastname" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">性</label>
       <input 
-        id="nickname"
-        name="nickname" 
-        value="{{.Nickname}}"
-        class="input input-bordered"
+        type="text" 
+        id="lastname" 
+        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+        name="lastname" 
+        value="{{.Lastname}}" 
       />
-      <div class="text-red-500 text-xs">{{.ValidationFieldError.Nickname}}</div>
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">生年月日</span>
-      </div>
+    </div>
+    <div>
+      <label for="firstname" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">名</label>
       <input 
-        id="birthdate"
-        name="birthdate" 
-        type="date"
-        value="{{.Birthdate}}"
-        class="input input-bordered"
+        type="text" 
+        id="firstname" 
+        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+        name="firstname" 
+        value="{{.Firstname}}" 
       />
-      <div class="text-red-500 text-xs">{{.ValidationFieldError.Birthdate}}</div>
-    </label>
+    </div>
+  </div>
+
+  <div class="mb-6">
+    <label for="nickname" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">ニックネーム</label>
+    <input 
+      type="text" 
+      id="nickname" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      name="nickname" 
+      value="{{.Nickname}}" 
+    />
+  </div>
+
+  <div class="mb-6">
+    <label for="birthdate_year" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">生年月日</label>
+    <input 
+      type="text" 
+      id="birthdate_year" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 w-24 p-2.5 me-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      name="birthdate_year" />年
+    <input 
+      type="text" 
+      id="birthdate_month" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 w-16 p-2.5 me-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      name="birthdate_month" />月
+     <input 
+      type="text" 
+      id="birthdate_day" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 w-16 p-2.5 me-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      name="birthdate_day" />日
+    <!-- {{if .ValidationFieldError.Birthdate}} -->
+    <p class="mt-2 text-sm text-red-600 dark:text-red-500">{{.ValidationFiedError.Birthdate}}</p>
+    <!-- {{end}} -->
   </div>
 
   <div class="mx-auto text-center">
-    <button class="btn btn-primary btn-wide">保存</button>
+    <button 
+      type="submit" 
+      class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >保存</button>
   </div>
 
-  {{ template "_alert.html"}}
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
 </form>
 {{end}}

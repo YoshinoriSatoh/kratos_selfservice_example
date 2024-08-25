@@ -1,11 +1,4 @@
 {{define "auth/verification/_code_form.html"}}
-<div class="alert alert-info mt-2">
-  <div>
-    <div>アカウント検証メールが送信されました。</div>
-    <div>メールに記載されている6桁の検証コードを入力してください。 </div>
-    <a class="link" href="http://localhost:4436" target="_blank">localhostのメールサーバはこちら</a>
-  </div>
-</div>
 <form 
   id="verification-form" 
   hx-post="/auth/verification/code?flow={{.VerificationFlowID}}"
@@ -18,31 +11,30 @@
     value="{{.CsrfToken}}"
   />
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">検証コード</span>
-      </div>
-      <input 
-        name="code" 
-        min="6" 
-        max="6" 
-        {{if .ValidationFieldError.Code}}
-        class="input input-bordered input-error"
-        {{else}}
-        class="input input-bordered"
-        {{end}}
-      />
-      {{if .ValidationFieldError.Code}}
-      <div class="text-sm text-red-700 my-2">{{.ValidationFieldError.Code}}</div>
-      {{end}}
-    </label>
+  <div class="my-6 text-center">
+    <div class="mb-6">
+      {{ template "components/_input.html" dict 
+        "type" "text" 
+        "name" "code" 
+        "label" "検証コード" 
+        "value" .Code 
+        "validationErrorMessage" .ValidationFieldError.Code.Message 
+      }}
+    </div>
+  </div> 
+
+  <div class="mx-auto mt-4 text-center">
+    <button 
+      type="submit" 
+      class="w-40 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >送信</button>
   </div>
 
-  <div class="mx-auto text-center">
-    <button class="btn btn-primary btn-wide">送信</button>
-  </div>
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
 
-  {{ template "_alert.html" }}
 </form>
 {{end}}

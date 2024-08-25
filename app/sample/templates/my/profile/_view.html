@@ -6,78 +6,66 @@
       hx-get="/my/profile/form" 
       hx-swap="outerHTML" 
       hx-target="#profile-form"
-      class="btn btn-outline btn-primary"
-    >プロフィール編集</button>
+      class="text-blue-700 hover:text-white border border-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center me-2 mb-2 dark:border-blue-500 dark:text-blue-500 dark:hover:text-white dark:hover:bg-blue-500 dark:focus:ring-blue-800"
+    >プロフィール編集
+    </button>
   </div>
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">メールアドレス</span>
-      </div>
-      <input 
-        id="email"
-        name="email" 
-        type="email"
-        value="{{.Email}}"
-        class="input input-bordered"
-        disabled
-      >
-    </label>
+  <div class="mb-6">
+    <label for="email" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">メールアドレス</label>
+    <input 
+      type="email" 
+      id="email" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg cursor-not-allowed focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      placeholder="john.doe@company.com" 
+      name="traits.email" 
+      value="{{.Email}}"
+      disabled
+    />
+  </div> 
 
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">氏名</span>
-      </div>
-      <div class="grid grid-cols-12">
-        <div class="container col-span-6">
-          <input 
-            id="lastname"
-            name="lastname" 
-            value="{{.Lastname}}"
-            class="input input-bordered"
-            disabled
-          />
-        </div>
-        <div class="container col-span-6">
-          <input 
-            id="firstname"
-            name="firstname" 
-            value="{{.Firstname}}"
-            class="input input-bordered"
-            disabled
-          />
-        </div>
-      </div>
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">ニックネーム</span>
-      </div>
+  <div class="grid gap-6 mb-6 md:grid-cols-2">
+    <div>
+      <label for="lastname" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">性</label>
       <input 
-        id="nickname"
-        name="nickname" 
-        value="{{.Nickname}}"
-        class="input input-bordered"
-        disabled
-      />
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">生年月日</span>
-      </div>
+        type="text" 
+        id="lastname" 
+        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg cursor-not-allowed focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+        name="lastname" 
+        value="{{.Lastname}}" 
+        disabled />
+    </div>
+    <div>
+      <label for="firstname" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">名</label>
       <input 
-        id="birthdate"
-        name="birthdate" 
-        value="{{.Birthdate}}"
-        class="input input-bordered"
-        disabled
-      />
-    </label>
+        type="text" 
+        id="firstname" 
+        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg cursor-not-allowed focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+        name="firstname" 
+        value="{{.Firstname}}" 
+        disabled />
+    </div>
   </div>
 
-  {{ template "_alert.html"}}
+  <div class="mb-6">
+    <label for="nickname" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">ニックネーム</label>
+    <input 
+      type="text" 
+      id="nickname" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg cursor-not-allowed focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      name="nickname" 
+      value="{{.Nickname}}" 
+      disabled />
+  </div>
+
+  <div class="mb-6">
+    <label for="birthdate" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">生年月日</label>
+    <input 
+      type="text" 
+      id="birthdate" 
+      class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg cursor-not-allowed focus:ring-blue-500 focus:border-blue-500 w-full p-2.5 me-2 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" 
+      name="birthdate" 
+      disabled />
+  </div>
 </div>
 {{end}}

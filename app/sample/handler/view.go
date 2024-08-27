@@ -23,7 +23,8 @@ type view struct {
 
 func newView(path string) *view {
 	v := &view{
-		path: path,
+		path:   path,
+		params: map[string]any{},
 	}
 	return v
 }
@@ -50,6 +51,12 @@ func (v *view) addParams(p map[string]any) *view {
 	return v
 }
 
+func setCookie(w http.ResponseWriter, cookie []string) {
+	for _, v := range cookie {
+		w.Header().Set("Set-Cookie", v)
+	}
+}
+
 func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
 	w.Header().Set("HX-Push-Url", pushUrl)
 	w.Header().Set("HX-Retarget", "body")
@@ -65,38 +72,6 @@ type viewError struct {
 func (ve *viewError) hasError() bool {
 	return len(ve.validationFieldErrors) > 0 || len(ve.messages) > 0
 }
-
-// func (ve *viewError) addSuccessMessage(message string) *viewError {
-// 	ve.messages = append(ve.messages, msg{
-// 		MsgType: MSG_TYPE_SUCCESS,
-// 		message: message,
-// 	})
-// 	return ve
-// }
-
-// func (ve *viewError) addInfoMessage(message string) *viewError {
-// 	ve.messages = append(ve.messages, msg{
-// 		MsgType: MSG_TYPE_INFO,
-// 		message: message,
-// 	})
-// 	return ve
-// }
-
-// func (ve *viewError) addWarningMessage(message string) *viewError {
-// 	ve.messages = append(ve.messages, msg{
-// 		MsgType: MSG_TYPE_WARNING,
-// 		message: message,
-// 	})
-// 	return ve
-// }
-
-// func (ve *viewError) addErrorMessage(message string) *viewError {
-// 	ve.messages = append(ve.messages, msg{
-// 		MsgType: MSG_TYPE_ERROR,
-// 		message: message,
-// 	})
-// 	return ve
-// }
 
 func (ve *viewError) toViewParams() map[string]any {
 	return map[string]any{
@@ -179,9 +154,19 @@ func (ve *viewError) extract(err error) *viewError {
 }
 
 func kratosGenericErrorToViewError(genericError kratos.GenericError) *viewError {
-	message := pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+	message, err := pkgVars.loc.Localize(&i18n.LocalizeConfig{
 		MessageID: fmt.Sprintf("ERR_KRATOS_%s", strings.ToUpper(genericError.ID)),
 	})
+	if err != nil {
+		slog.Error("kratosGenericErrorToViewError", "LocalizeError", err)
+		message, _ := pkgVars.loc.Localize(&i18n.LocalizeConfig{
+			MessageID: "ERR_FALLBACK",
+		})
+		return &viewError{
+			validationFieldErrors: map[string]validationFieldError{},
+			messages:              []msg{newErrorMsg(message)},
+		}
+	}
 	return &viewError{
 		validationFieldErrors: map[string]validationFieldError{},
 		messages:              []msg{newErrorMsg(message)},
@@ -191,10 +176,19 @@ func kratosGenericErrorToViewError(genericError kratos.GenericError) *viewError 
 func kratosUiMessagesToViewError(uiMessages kratos.ErrorUiMessages) *viewError {
 	var messages []msg
 	for _, v := range uiMessages {
-		message := pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		message, err := pkgVars.loc.Localize(&i18n.LocalizeConfig{
 			MessageID:    fmt.Sprintf("ERR_KRATOS_UI_%s", strconv.Itoa(int(v.ID))),
 			TemplateData: v.Context,
 		})
+		if err != nil {
+			slog.Error("kratosUiMessagesToViewError", "LocalizeError", err)
+			message, _ := pkgVars.loc.Localize(&i18n.LocalizeConfig{
+				MessageID:    "ERR_FALLBACK",
+				TemplateData: v.Context,
+			})
+			messages = append(messages, newErrorMsg(message))
+			continue
+		}
 		messages = append(messages, newErrorMsg(message))
 	}
 
@@ -218,28 +212,6 @@ func (e *validationFieldErrors) toViewParams() map[string]any {
 	}
 }
 
-// // 削除対象
-// func extractValidationFieldErrors(err error) validationFieldErrors {
-// 	if err == nil {
-// 		return validationFieldErrors{}
-// 	}
-
-// 	fieldsErrors := make(validationFieldErrors)
-// 	for _, err := range err.(validator.ValidationErrors) {
-// 		var msg string
-// 		if err.ActualTag() == "date" {
-// 			msg = "正しい日付を入力してください"
-// 		} else {
-// 			msg = err.Translate(pkgVars.trans)
-// 		}
-// 		fieldsErrors[err.StructField()] = validationFieldError{
-// 			Tag:     err.ActualTag(),
-// 			Message: msg,
-// 		}
-// 	}
-// 	return fieldsErrors
-// }
-
 // ---------------------- msg ----------------------
 
 type MsgType string
@@ -255,26 +227,6 @@ type msg struct {
 	MsgType MsgType
 	Message string
 }
-
-// func newMsg(MsgType MsgType) *msg {
-// 	var lc i18n.LocalizeConfig
-// 	if MsgType == MSG_TYPE_ERROR {
-// 		lc = i18n.LocalizeConfig{
-// 			MessageID: "ERR_FALLBACK",
-// 		}
-// 	}
-
-// 	m := msg{
-// 		MsgType: MsgType,
-// 		message: pkgVars.loc.MustLocalize(&lc),
-// 	}
-
-// 	for _, opt := range opts {
-// 		opt(&m)
-// 	}
-
-// 	return &m
-// }
 
 func newErrorSuccess(message string) msg {
 	return msg{
@@ -307,91 +259,6 @@ func newErrorMsg(message string) msg {
 	}
 }
 
-// // ---------------------- errorMessages ----------------------
-// type errorMessages []string
-
-// type errorMessagesOption func(*errorMessages)
-
-// func newErrorMessages(options ...errorMessagesOption) *errorMessages {
-// 	e := errorMessagesMap[ERROR_MESSAGES_ID_FALLBACK]
-// 	for _, option := range options {
-// 		option(&e)
-// 	}
-// 	return &e
-// }
-
-// func withErrorMessagesDefault(em errorMessages) errorMessagesOption {
-// 	return func(e *errorMessages) {
-// 		e = &em
-// 	}
-// }
-
-// func (e *errorMessages) extract(err error) *errorMessages {
-// 	var kratosErr kratos.Error
-// 	if errors.As(err, &kratosErr) {
-// 		emsgs := errorMessages(kratosErr.Messages)
-// 		return &emsgs
-// 	} else {
-// 		return e
-// 	}
-// }
-
-// func (e *errorMessages) toViewParams() map[string]any {
-// 	return map[string]any{
-// 		"ErrorMessages": e,
-// 	}
-// }
-
-// ---------------------- message ----------------------
-// type viewMsgType string
-
-// const (
-// 	MSG_TYPE_SUCCESS = viewMsgType("success")
-// 	MSG_TYPE_INFO    = viewMsgType("info")
-// 	MSG_TYPE_WARNING = viewMsgType("warning")
-// 	MSG_TYPE_ERROR   = viewMsgType("error")
-// )
-
-// type viewMsg struct {
-// 	MsgType viewMsgType
-// 	msgList []string
-// }
-
-// type viewMsgOption func(*viewMsg)
-
-// func newViewMsg(opts ...viewMsgOption) *viewMsg {
-// 	e := errorMessagesMap[ERROR_MESSAGES_ID_FALLBACK]
-// 	for _, option := range options {
-// 		option(&e)
-// 	}
-// 	return &e
-// }
-
-// ---------------------------------------------------
-
-func viewParameters(session *kratos.Session, r *http.Request, p map[string]any) map[string]any {
-	params := p
-	params["IsAuthenticated"] = isAuthenticated(session)
-	params["Navbar"] = getNavbarviewParameters(session)
-	params["CurrentPath"] = r.URL.Path
-	return params
-}
-func getNavbarviewParameters(session *kratos.Session) map[string]any {
-	var nickname string
-
-	if session != nil {
-		nickname = session.Identity.Traits.Nickname
-	}
-	return map[string]any{
-		"Nickname": nickname,
-	}
-}
-func setCookieToResponseHeader(w http.ResponseWriter, cookies []string) {
-	for _, cookie := range cookies {
-		w.Header().Add("Set-Cookie", cookie)
-	}
-}
-
 func redirect(w http.ResponseWriter, r *http.Request, redirectTo string) {
 	if r.Header.Get("HX-Request") == "true" {
 		slog.Info("HX-Redirect")
@@ -402,10 +269,4 @@ func redirect(w http.ResponseWriter, r *http.Request, redirectTo string) {
 		slog.Info("Redirect")
 		http.Redirect(w, r, redirectTo, http.StatusSeeOther)
 	}
-}
-
-func swapBody(w http.ResponseWriter, url string) {
-	w.Header().Set("HX-Push-Url", url)
-	w.Header().Set("HX-Retarget", "body")
-	w.Header().Set("HX-Reswap", "innerHTML")
 }

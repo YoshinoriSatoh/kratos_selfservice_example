@@ -6,7 +6,7 @@ import (
 )
 
 func getSession(ctx context.Context) *kratos.Session {
-	session := ctx.Value("session")
+	session := ctx.Value(ctxSession{})
 	if session == nil {
 		return nil
 	}

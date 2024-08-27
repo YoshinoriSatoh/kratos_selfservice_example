@@ -74,7 +74,11 @@ func (p *Provider) handleGetTop(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	pkgVars.tmpl.ExecuteTemplate(w, "top/index.html", viewParameters(session, r, map[string]any{
+	// prepare views
+	topIndexView := newView("top/index.html")
+
+	// render
+	topIndexView.addParams(map[string]any{
 		"Items": items,
-	}))
+	}).render(w, r, session)
 }

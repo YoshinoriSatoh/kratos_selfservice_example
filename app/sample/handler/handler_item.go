@@ -14,64 +14,123 @@ type item struct {
 	Price       int    `json:"price"`
 }
 
-type handleGetItemDertailRequestPostForm struct {
-	itemID int
+// --------------------------------------------------------------------------
+// GET /item/{id}
+// --------------------------------------------------------------------------
+// Request parameters for handleGetItemDetail
+type getItemRequestParams struct {
+	ItemID int
 }
 
-func (p *Provider) handleGetItemDetail(w http.ResponseWriter, r *http.Request) {
+// Extract parameters from http request
+func newGetItemRequestParams(r *http.Request) *getItemRequestParams {
+	itemID, _ := strconv.Atoi(r.PathValue("id"))
+	return &getItemRequestParams{
+		ItemID: itemID,
+	}
+}
+
+// Return parameters that can refer in view template
+func (p *getItemRequestParams) toViewParams() map[string]any {
+	return map[string]any{
+		"ItemID": p.ItemID,
+	}
+}
+
+func (p *Provider) handleGetItem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	itemID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "Invalid item id", http.StatusBadRequest)
-		return
-	}
-	reqParams := handleGetItemDertailRequestPostForm{
-		itemID: itemID,
-	}
+	// collect request parameters
+	params := newGetItemRequestParams(r)
 
-	item := items[reqParams.itemID]
-	pkgVars.tmpl.ExecuteTemplate(w, "item/detail.html", viewParameters(session, r, map[string]any{
-		"ItemID":      itemID,
+	// prepare views
+	itemDetailView := newView("item/detail.html").addParams(params.toViewParams())
+
+	// render
+	item := items[params.ItemID]
+	itemDetailView.addParams(map[string]any{
 		"Image":       item.Image,
 		"Name":        item.Name,
 		"Description": item.Description,
 		"Price":       item.Price,
-	}))
+	}).render(w, r, session)
+}
+
+// --------------------------------------------------------------------------
+// GET /item/{id}/purchase
+// --------------------------------------------------------------------------
+// Request parameters for handleGetItemPurchase
+type getItemPurchaseRequestParams struct {
+	ItemID int
+}
+
+// Extract parameters from http request
+func newGetItemPurchaseRequestParams(r *http.Request) *getItemPurchaseRequestParams {
+	itemID, _ := strconv.Atoi(r.PathValue("id"))
+	return &getItemPurchaseRequestParams{
+		ItemID: itemID,
+	}
+}
+
+// Return parameters that can refer in view template
+func (p *getItemPurchaseRequestParams) toViewParams() map[string]any {
+	return map[string]any{
+		"ItemID": p.ItemID,
+	}
 }
 
 func (p *Provider) handleGetItemPurchase(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	itemID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "Invalid item id", http.StatusBadRequest)
-		return
-	}
-	reqParams := handleGetItemDertailRequestPostForm{
-		itemID: itemID,
-	}
-	item := items[reqParams.itemID]
+	// collect request parameters
+	params := newGetItemRequestParams(r)
 
-	localedPrice := pkgVars.printer.Sprintf("%d", item.Price)
+	// prepare views
+	itemPurchaseView := newView("item/purchase.html").addParams(params.toViewParams())
+	itemPurchaseConfirmView := newView("item/_purchase_confirm.html").addParams(params.toViewParams())
+	itemPurchaseWithoutAuthView := newView("item/_purchase_without_auth.html").addParams(params.toViewParams())
+
+	// render
+	item := items[params.ItemID]
 	viewParams := map[string]any{
-		"ItemID":      itemID,
 		"Image":       item.Image,
 		"Name":        item.Name,
 		"Description": item.Description,
-		"Price":       localedPrice,
+		"Price":       pkgVars.printer.Sprintf("%d", item.Price),
 	}
-
 	if isAuthenticated(session) {
 		if r.Header.Get("HX-Request") == "true" {
-			pkgVars.tmpl.ExecuteTemplate(w, "item/_purchase.html", viewParameters(session, r, viewParams))
+			itemPurchaseConfirmView.addParams(viewParams).render(w, r, session)
 		} else {
-			pkgVars.tmpl.ExecuteTemplate(w, "item/purchase.html", viewParameters(session, r, viewParams))
+			itemPurchaseView.addParams(viewParams).render(w, r, session)
 		}
 	} else {
-		pkgVars.tmpl.ExecuteTemplate(w, "item/_purchase_without_auth.html", viewParameters(session, r, viewParams))
+		itemPurchaseWithoutAuthView.addParams(viewParams).render(w, r, session)
+	}
+}
+
+// --------------------------------------------------------------------------
+// POST /item/{id}/purchase
+// --------------------------------------------------------------------------
+// Request parameters for handlePostItemPurchase
+type postItemPurchaseRequestParams struct {
+	ItemID int
+}
+
+// Extract parameters from http request
+func newPostItemPurchaseRequestParams(r *http.Request) *postItemPurchaseRequestParams {
+	itemID, _ := strconv.Atoi(r.PathValue("id"))
+	return &postItemPurchaseRequestParams{
+		ItemID: itemID,
+	}
+}
+
+// Return parameters that can refer in view template
+func (p *postItemPurchaseRequestParams) toViewParams() map[string]any {
+	return map[string]any{
+		"ItemID": p.ItemID,
 	}
 }
 
@@ -79,25 +138,20 @@ func (p *Provider) handlePostItemPurchase(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	itemID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "Invalid item id", http.StatusBadRequest)
-		return
-	}
-	reqParams := handleGetItemDertailRequestPostForm{
-		itemID: itemID,
-	}
-	item := items[reqParams.itemID]
+	// collect request parameters
+	params := newPostItemPurchaseRequestParams(r)
+
+	// prepare views
+	itemPurchaseCompleteView := newView("item/_purchase_complete.html").addParams(params.toViewParams())
 
 	time.Sleep(3 * time.Second)
 
-	viewParams := map[string]any{
-		"ItemID":      itemID,
+	// render
+	item := items[params.ItemID]
+	itemPurchaseCompleteView.addParams(map[string]any{
 		"Image":       item.Image,
 		"Name":        item.Name,
 		"Description": item.Description,
 		"Price":       item.Price,
-	}
-
-	pkgVars.tmpl.ExecuteTemplate(w, "item/_purchase_complete.html", viewParameters(session, r, viewParams))
+	}).render(w, r, session)
 }

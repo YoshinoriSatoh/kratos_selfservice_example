@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 )
 
 type KratosRequestHeader struct {
@@ -25,7 +24,7 @@ type kratosRequest struct {
 }
 
 type KratosResponseHeader struct {
-	Cookie string
+	Cookie []string
 }
 
 type kratosResponse struct {
@@ -78,15 +77,24 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 	}
 
 	if i.Path != "/sessions/whoami" {
-		slog.InfoContext(ctx, "requestKratos", "status code", resp.StatusCode, "body", string(body))
+		slog.InfoContext(ctx, "requestKratos", "status code", resp.StatusCode, "body", string(body), "header", resp.Header)
 	}
+
 	return kratosResponse{
 		BodyBytes:  body,
 		StatusCode: resp.StatusCode,
 		Header: KratosResponseHeader{
-			Cookie: strings.Join(resp.Header["Set-Cookie"], ";"),
+			Cookie: resp.Header["Set-Cookie"],
 		},
 	}, getKratosError(ctx, body, resp.StatusCode)
+}
+
+// status code 400 の場合のレスポンスボディのフォーマット
+// ドキュメントではregistration flowが返却される記載しかないが、GenericErrorが返却される場合もある
+// どちらの場合にも対応するため、必要なフィールドを全て定義している
+type kratosBadRequestErrorResponse struct {
+	Ui    *uiContainer  `json:"ui,omitempty"`
+	Error *GenericError `json:"error,omitempty"`
 }
 
 func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error {
@@ -124,6 +132,10 @@ func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error
 		}
 		return errorBrowserLocationChangeRequired
 	} else {
+		if len(bodyBytes) == 0 {
+			return nil
+		}
+
 		var errGeneric ErrorGeneric
 		if err := json.Unmarshal(bodyBytes, &errGeneric); err != nil {
 			slog.ErrorContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
@@ -150,6 +162,7 @@ func getErrorMessagesFromUi(ui uiContainer) error {
 			messages = append(messages, ErrorUiMessage{
 				ID:   v.ID,
 				Type: v.Type,
+				Text: v.Text,
 			})
 		}
 	}
@@ -174,15 +187,3 @@ func getDuplicateIdentifierFromUi(ui uiContainer) string {
 
 	return ""
 }
-
-// func getErrorMessagesFromGenericError(err GenericError) error {
-// 	// slog.Info("getErrorMessagesFromGenericError")
-// 	// https://www.ory.sh/docs/kratos/concepts/ui-user-interface#ui-error-codes
-// 	if err.ID == "security_csrf_violation" {
-// 		return Error{
-// 			ID:      err.ID,
-// 			Message: err.Message,
-// 		}
-// 	}
-// 	return Error{}
-// }

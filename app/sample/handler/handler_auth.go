@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
@@ -17,6 +18,13 @@ import (
 // Request parameters for handleGetAuthRegistration
 type getAuthRegistrationRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
+}
+
+// Extract parameters from http request
+func newGetAuthRegistrationRequestParams(r *http.Request) *getAuthRegistrationRequestParams {
+	return &getAuthRegistrationRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -43,6 +51,8 @@ func (p *getAuthRegistrationRequestParams) validate() *viewError {
 
 	// Individual validations write here that cannot validate in common validations
 
+	// slog.InfoContext(ctx, "validation error occured", "viewError", viewError)
+
 	return viewError
 }
 
@@ -52,16 +62,14 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := getAuthRegistrationRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	params := newGetAuthRegistrationRequestParams(r)
 
 	// prepare views
-	registrationIndexView := newView(r, "auth/registration/index.html", params.toViewParams())
+	registrationIndexView := newView("auth/registration/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationIndexView.addParams(viewError.toViewParams()).render(w, session)
+		registrationIndexView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -71,26 +79,38 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	}))
 
 	// create or get registration Flow
-	var err error
-	var registrationFlow kratos.RegistrationFlow
+	var (
+		err                  error
+		registrationFlow     kratos.RegistrationFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		registrationFlow, err = p.d.Kratos.CreateRegistrationFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
-	} else {
-		registrationFlow, err = p.d.Kratos.GetRegistrationFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
-			FlowID: params.FlowID,
+		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
+		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 		})
+		kratosResponseHeader = createRegistrationFlowResp.Header
+		registrationFlow = createRegistrationFlowResp.RegistrationFlow
+	} else {
+		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
+		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
+			FlowID: params.FlowID,
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		kratosResponseHeader = getRegistrationFlowResp.Header
+		registrationFlow = getRegistrationFlowResp.RegistrationFlow
 	}
 	if err != nil {
-		registrationIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		registrationIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	slog.DebugContext(ctx, "debug", "registrationFlow", registrationFlow)
 
 	// render page
+	setCookie(w, kratosResponseHeader.Cookie)
 	registrationIndexView.addParams(map[string]any{
 		"RegistrationFlowID": registrationFlow.FlowID,
 		"CsrfToken":          registrationFlow.CsrfToken,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -99,6 +119,13 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 // Request parameters for handleGetAuthRegistrationOidc
 type getAuthRegistrationOidcRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
+}
+
+// Extract parameters from http request
+func newGetAuthRegistrationOidcRequestParams(r *http.Request) *getAuthRegistrationOidcRequestParams {
+	return &getAuthRegistrationOidcRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -134,16 +161,14 @@ func (p *Provider) handleGetAuthRegistrationOidc(w http.ResponseWriter, r *http.
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := getAuthRegistrationOidcRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	params := newGetAuthRegistrationOidcRequestParams(r)
 
 	// prepare views
-	registrationOidcView := newView(r, "auth/registration/oidc.html", params.toViewParams())
+	registrationOidcView := newView("auth/registration/oidc.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationOidcView.addParams(viewError.toViewParams()).render(w, session)
+		registrationOidcView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -153,58 +178,82 @@ func (p *Provider) handleGetAuthRegistrationOidc(w http.ResponseWriter, r *http.
 	}))
 
 	// create or get registration Flow
-	var err error
-	var registrationFlow kratos.RegistrationFlow
+	var (
+		err                  error
+		registrationFlow     kratos.RegistrationFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		registrationFlow, err = p.d.Kratos.CreateRegistrationFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
-	} else {
-		registrationFlow, err = p.d.Kratos.GetRegistrationFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
-			FlowID: params.FlowID,
+		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
+		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 		})
+		kratosResponseHeader = createRegistrationFlowResp.Header
+		registrationFlow = createRegistrationFlowResp.RegistrationFlow
+	} else {
+		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
+		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
+			FlowID: params.FlowID,
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		kratosResponseHeader = getRegistrationFlowResp.Header
+		registrationFlow = getRegistrationFlowResp.RegistrationFlow
 	}
 	if err != nil {
-		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// Get and fill identity traits to view parameters when user already registered with the credential of provided the oidc provider,
-	// if registrationFlow.CredentialType == kratos.CredentialsTypeOIDC {
-	identities, err := p.d.Kratos.AdminListIdentities(ctx, w, r, kratos.AdminListIdentitiesInput{
+	// validate registration flow credential type
+	if registrationFlow.CredentialType == kratos.CredentialsTypeOIDC {
+		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+
+	// Update identity when user already registered with the same credential of provided the oidc provider.
+	identities, err := p.d.Kratos.AdminListIdentities(ctx, kratos.AdminListIdentitiesRequest{
 		CredentialIdentifier: registrationFlow.Traits.Email,
 	})
 	if err != nil {
-		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 	if len(identities) > 1 {
 		message := pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 			MessageID: "ERR_DEFAULT",
 		})
-		registrationOidcView.addParams(baseViewError.setMessages([]string{message}).toViewParams()).render(w, session)
+		registrationOidcView.addParams(baseViewError.setMessages([]string{message}).toViewParams()).render(w, r, session)
 		return
 	}
-
 	if len(identities) == 1 {
-		_, err = p.d.Kratos.UpdateRegistrationFlow(ctx, w, r, kratos.UpdateRegistrationFlowInput{
-			FlowID:    registrationFlow.FlowID,
-			CsrfToken: registrationFlow.CsrfToken,
-			Method:    "oidc",
-			Provider:  "google",
-			Traits:    identities[0].Traits,
+		// Transferring cookies from create or get registration flow response
+		kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+		kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
+
+		// update Registration Flow
+		_, err = p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+			FlowID: registrationFlow.FlowID,
+			Header: kratosRequestHeader,
+			Body: kratos.UpdateRegistrationFlowRequestBody{
+				Method:    "oidc",
+				CsrfToken: registrationFlow.CsrfToken,
+				Provider:  "google",
+				Traits:    identities[0].Traits,
+			},
 		})
 		if err != nil {
-			registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+			registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
-		// }
 	}
 
 	// render page
+	setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
 	registrationOidcView.addParams(map[string]any{
 		"RegistrationFlowID": registrationFlow.FlowID,
 		"CsrfToken":          registrationFlow.CsrfToken,
 		"Traits":             registrationFlow.Traits,
-	}).render(w, session)
+	}).render(w, r, session)
 
 }
 
@@ -214,6 +263,13 @@ func (p *Provider) handleGetAuthRegistrationOidc(w http.ResponseWriter, r *http.
 // Request parameters for handleGetAuthRegistrationPasskey
 type getAuthRegistrationdPasskeyRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
+}
+
+// Extract parameters from http request
+func newGetAuthRegistrationPasskeyRequestParams(r *http.Request) *getAuthRegistrationdPasskeyRequestParams {
+	return &getAuthRegistrationdPasskeyRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -248,16 +304,14 @@ func (p *Provider) handleGetAuthRegistrationPasskey(w http.ResponseWriter, r *ht
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	params := getAuthRegistrationdPasskeyRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	params := newGetAuthRegistrationOidcRequestParams(r)
 
 	// prepare views
-	registrationPasskeyView := newView(r, "auth/registration/passkey.html", params.toViewParams())
+	registrationPasskeyView := newView("auth/registration/passkey.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationPasskeyView.addParams(viewError.toViewParams()).render(w, session)
+		registrationPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -267,27 +321,40 @@ func (p *Provider) handleGetAuthRegistrationPasskey(w http.ResponseWriter, r *ht
 	}))
 
 	// create or get registration Flow
-	var err error
-	var registrationFlow kratos.RegistrationFlow
+	var (
+		err                  error
+		registrationFlow     kratos.RegistrationFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		registrationFlow, err = p.d.Kratos.CreateRegistrationFlow(ctx, w, r, kratos.CreateRegistrationFlowInput{})
-	} else {
-		registrationFlow, err = p.d.Kratos.GetRegistrationFlow(ctx, w, r, kratos.GetRegistrationFlowInput{
-			FlowID: params.FlowID,
+		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
+		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 		})
+		kratosResponseHeader = createRegistrationFlowResp.Header
+		registrationFlow = createRegistrationFlowResp.RegistrationFlow
+	} else {
+		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
+		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
+			FlowID: params.FlowID,
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		kratosResponseHeader = getRegistrationFlowResp.Header
+		registrationFlow = getRegistrationFlowResp.RegistrationFlow
 	}
 	if err != nil {
-		registrationPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		registrationPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
+	setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
 	registrationPasskeyView.addParams(map[string]any{
 		"RegistrationFlowID": registrationFlow.FlowID,
 		"CsrfToken":          registrationFlow.CsrfToken,
 		"Traits":             registrationFlow.Traits,
 		"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -302,6 +369,7 @@ type postAuthRegistrationRequestParams struct {
 	PasswordConfirmation string        `validate:"required" ja:"パスワード確認"`
 }
 
+// Extract parameters from http request
 func newPostAuthRegistrationRequestParams(r *http.Request) *postAuthRegistrationRequestParams {
 	return &postAuthRegistrationRequestParams{
 		FlowID:    r.URL.Query().Get("flow"),
@@ -377,7 +445,6 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		slog.DebugContext(ctx, "validation error", "viewError", viewError)
 		registrationFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
@@ -388,12 +455,9 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	}))
 
 	// update Registration Flow
-	updateRegistrationFlowResponse, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+	updateRegistrationFlowResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratos.KratosRequestHeader{
-			Cookie:   r.Header.Get("Cookie"),
-			ClientIP: r.RemoteAddr,
-		},
+		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
 			CsrfToken: params.CsrfToken,
 			Method:    "password",
@@ -408,13 +472,13 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	}
 
 	// transition to verification flow from registration flow
+	// Transferring cookies from update registration flow response
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(updateRegistrationFlowResp.Header.Cookie, " ")
 	// get verification flow
 	getVerificationFlowResp, err := p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
-		FlowID: updateRegistrationFlowResponse.VerificationFlowID,
-		Header: kratos.KratosRequestHeader{
-			Cookie:   updateRegistrationFlowResponse.Header.Cookie, // Transferring cookies from update registration flow response
-			ClientIP: r.RemoteAddr,
-		},
+		FlowID: updateRegistrationFlowResp.VerificationFlowID,
+		Header: kratosRequestHeader,
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "get verification error", "err", err.Error())
@@ -423,7 +487,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	}
 
 	// render verification code page (replace <body> tag and push url)
-	w.Header().Set("Set-Cookie", updateRegistrationFlowResponse.Header.Cookie)
+	setCookie(w, getVerificationFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
 	verificationCodeView.addParams(map[string]any{
 		"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
@@ -441,6 +505,22 @@ type postAuthRegistrationOidcRequestParams struct {
 	CsrfToken string        `validate:"required"`
 	Provider  string        `validate:"required"`
 	Traits    kratos.Traits `validate:"required"`
+}
+
+// Extract parameters from http request
+func newPostAuthRegistrationOidcRequestParams(r *http.Request) *postAuthRegistrationOidcRequestParams {
+	return &postAuthRegistrationOidcRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Provider:  r.PostFormValue("provider"),
+		Traits: kratos.Traits{
+			Email:     r.PostFormValue("traits.email"),
+			Firstname: r.PostFormValue("traits.firstname"),
+			Lastname:  r.PostFormValue("traits.lastname"),
+			Nickname:  r.PostFormValue("traits.nickname"),
+			Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
+		},
+	}
 }
 
 // Return parameters that can refer in view template
@@ -483,25 +563,14 @@ func (p *Provider) handlePostAuthRegistrationOidc(w http.ResponseWriter, r *http
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := postAuthRegistrationOidcRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Provider:  r.PostFormValue("provider"),
-		Traits: kratos.Traits{
-			Email:     r.PostFormValue("traits.email"),
-			Firstname: r.PostFormValue("traits.firstname"),
-			Lastname:  r.PostFormValue("traits.lastname"),
-			Nickname:  r.PostFormValue("traits.nickname"),
-			Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
-		},
-	}
+	params := newPostAuthRegistrationOidcRequestParams(r)
 
 	// prepare views
-	registrationFormOidc := newView(r, "auth/registration/_form_oidc.html", params.toViewParams())
+	registrationFormOidc := newView("auth/registration/_form_oidc.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationFormOidc.addParams(viewError.toViewParams()).render(w, session)
+		registrationFormOidc.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -511,15 +580,18 @@ func (p *Provider) handlePostAuthRegistrationOidc(w http.ResponseWriter, r *http
 	}))
 
 	// update Registration Flow
-	kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, w, r, kratos.UpdateRegistrationFlowInput{
-		FlowID:    params.FlowID,
-		CsrfToken: params.CsrfToken,
-		Method:    "oidc",
-		Provider:  params.Provider,
-		Traits:    params.Traits,
+	kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateRegistrationFlowRequestBody{
+			CsrfToken: params.CsrfToken,
+			Method:    "oidc",
+			Provider:  params.Provider,
+			Traits:    params.Traits,
+		},
 	})
 	if err != nil {
-		registrationFormOidc.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		registrationFormOidc.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -537,6 +609,22 @@ type postAuthRegistrationPasskeyRequestParams struct {
 	CsrfToken       string        `validate:"required"`
 	Traits          kratos.Traits `validate:"required"`
 	PasskeyRegister string
+}
+
+// Extract parameters from http request
+func newPostAuthRegistrationPasskeyRequestParams(r *http.Request) *postAuthRegistrationPasskeyRequestParams {
+	return &postAuthRegistrationPasskeyRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Traits: kratos.Traits{
+			Email:     r.PostFormValue("traits.email"),
+			Firstname: r.PostFormValue("traits.firstname"),
+			Lastname:  r.PostFormValue("traits.lastname"),
+			Nickname:  r.PostFormValue("traits.nickname"),
+			Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
+		},
+		PasskeyRegister: r.PostFormValue("passkey_register"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -579,25 +667,14 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := postAuthRegistrationPasskeyRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Traits: kratos.Traits{
-			Email:     r.PostFormValue("traits.email"),
-			Firstname: r.PostFormValue("traits.firstname"),
-			Lastname:  r.PostFormValue("traits.lastname"),
-			Nickname:  r.PostFormValue("traits.nickname"),
-			Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
-		},
-		PasskeyRegister: r.PostFormValue("passkey_register"),
-	}
+	params := newPostAuthRegistrationPasskeyRequestParams(r)
 
 	// prepare views
-	registrationFormPasskey := newView(r, "auth/registration/_form_passkey.html", params.toViewParams())
+	registrationFormPasskey := newView("auth/registration/_form_passkey.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationFormPasskey.addParams(viewError.toViewParams()).render(w, session)
+		registrationFormPasskey.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -607,15 +684,18 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 	}))
 
 	// Registration Flow 更新
-	kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, w, r, kratos.UpdateRegistrationFlowInput{
-		FlowID:          params.FlowID,
-		CsrfToken:       params.CsrfToken,
-		Method:          "passkey",
-		Traits:          params.Traits,
-		PasskeyRegister: params.PasskeyRegister,
+	kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateRegistrationFlowRequestBody{
+			CsrfToken:       params.CsrfToken,
+			Method:          "passkey",
+			Traits:          params.Traits,
+			PasskeyRegister: params.PasskeyRegister,
+		},
 	})
 	if err != nil {
-		registrationFormPasskey.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		registrationFormPasskey.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -634,6 +714,13 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 // Request parameters for handleGetAuthVerification
 type getAuthVerificationRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
+}
+
+// Extract parameters from http request
+func newGetAuthVerificationRequestParams(r *http.Request) *getAuthVerificationRequestParams {
+	return &getAuthVerificationRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -668,16 +755,14 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := getAuthVerificationRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	params := newGetAuthVerificationRequestParams(r)
 
 	// prepare views
-	verificationIndex := newView(r, "auth/verification/index.html", params.toViewParams())
+	verificationIndexView := newView("auth/verification/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		verificationIndex.addParams(viewError.toViewParams()).render(w, session)
+		verificationIndexView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -687,34 +772,53 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	}))
 
 	// create or get verification Flow
-	var err error
-	var verificationFlow kratos.VerificationFlow
+	var (
+		err                  error
+		verificationFlow     kratos.VerificationFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		verificationFlow, err = p.d.Kratos.CreateVerificationFlow(ctx, w, r, kratos.CreateVerificationFlowInput{})
+		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
+		createVerificatoinFlowResp, err = p.d.Kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		kratosResponseHeader = createVerificatoinFlowResp.Header
+		verificationFlow = createVerificatoinFlowResp.VerificationFlow
 	} else {
-		verificationFlow, err = p.d.Kratos.GetVerificationFlow(ctx, w, r, kratos.GetVerificationFlowInput{
+		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
+		getVerificatoinFlowResp, err = p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			FlowID: params.FlowID,
 		})
+		kratosResponseHeader = getVerificatoinFlowResp.Header
+		verificationFlow = getVerificatoinFlowResp.VerificationFlow
 	}
 	if err != nil {
-		verificationIndex.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		verificationIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
-	verificationIndex.addParams(map[string]any{
+	setCookie(w, kratosResponseHeader.Cookie)
+	verificationIndexView.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
 		"IsUsedFlow":         verificationFlow.IsUsedFlow,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
-// GET /auth/registration/code
+// GET /auth/verification/code
 // --------------------------------------------------------------------------
 // Request parameters for handleGetAuthVerificationCode
 type getAuthVerificationCodeRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
+}
+
+// Extract parameters from http request
+func newGetAuthVerificationCodeRequestParams(r *http.Request) *getAuthVerificationCodeRequestParams {
+	return &getAuthVerificationCodeRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -749,16 +853,14 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := getAuthVerificationRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	params := newGetAuthVerificationCodeRequestParams(r)
 
 	// prepare views
-	verificationCode := newView(r, "auth/verification/_code_form.html", params.toViewParams())
+	verificationCodeView := newView("auth/verification/_code_form.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		verificationCode.addParams(viewError.toViewParams()).render(w, session)
+		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -768,40 +870,61 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	}))
 
 	// create or get verification Flow
-	var err error
-	var verificationFlow kratos.VerificationFlow
+	var (
+		err                  error
+		verificationFlow     kratos.VerificationFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		verificationFlow, err = p.d.Kratos.CreateVerificationFlow(ctx, w, r, kratos.CreateVerificationFlowInput{})
+		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
+		createVerificatoinFlowResp, err = p.d.Kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		kratosResponseHeader = createVerificatoinFlowResp.Header
+		verificationFlow = createVerificatoinFlowResp.VerificationFlow
 	} else {
-		verificationFlow, err = p.d.Kratos.GetVerificationFlow(ctx, w, r, kratos.GetVerificationFlowInput{
+		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
+		getVerificatoinFlowResp, err = p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			FlowID: params.FlowID,
 		})
+		kratosResponseHeader = getVerificatoinFlowResp.Header
+		verificationFlow = getVerificatoinFlowResp.VerificationFlow
 	}
 	if err != nil {
-		verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
-	verificationCode.addParams(map[string]any{
+	setCookie(w, kratosResponseHeader.Cookie)
+	verificationCodeView.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
 		"IsUsedFlow":         verificationFlow.IsUsedFlow,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
 // POST /auth/verificatoin/email
 // --------------------------------------------------------------------------
-// Request parameters for handlePostVerificationEmail
-type postVerificationEmailRequestParams struct {
+// Request parameters for handlePostAuthVerificationEmail
+type postAuthVerificationEmailRequestParams struct {
 	FlowID    string `validate:"uuid4"`
 	CsrfToken string `validate:"required"`
 	Email     string `validate:"required,email" ja:"メールアドレス"`
 }
 
+// Extract parameters from http request
+func newPostAuthVerificationEmailRequestParams(r *http.Request) *postAuthVerificationEmailRequestParams {
+	return &postAuthVerificationEmailRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Email:     r.PostFormValue("email"),
+	}
+}
+
 // Return parameters that can refer in view template
-func (p *postVerificationEmailRequestParams) toViewParams() map[string]any {
+func (p *postAuthVerificationEmailRequestParams) toViewParams() map[string]any {
 	return map[string]any{
 		"VerificationFlowID": p.FlowID,
 		"CsrfToken":          p.CsrfToken,
@@ -812,7 +935,7 @@ func (p *postVerificationEmailRequestParams) toViewParams() map[string]any {
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postVerificationEmailRequestParams) validate() *viewError {
+func (params *postAuthVerificationEmailRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
 
 	// Individual validations write here that cannot validate in common validations
@@ -820,22 +943,19 @@ func (params *postVerificationEmailRequestParams) validate() *viewError {
 	return viewError
 }
 
-func (p *Provider) handlePostVerificationEmail(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	params := postVerificationEmailRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Email:     r.PostFormValue("email"),
-	}
+	// collect request parameters
+	params := newPostAuthVerificationEmailRequestParams(r)
 
 	// prepare views
-	verificationCode := newView(r, "auth/verification/_email_form.html", params.toViewParams())
+	verificationCodeView := newView("auth/verification/_email_form.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		verificationCode.addParams(viewError.toViewParams()).render(w, session)
+		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -845,37 +965,50 @@ func (p *Provider) handlePostVerificationEmail(w http.ResponseWriter, r *http.Re
 	}))
 
 	// Verification Flow 更新
-	updateVerificationFlowResponse, err := p.d.Kratos.UpdateVerificationFlow(ctx, w, r, kratos.UpdateVerificationFlowInput{
-		FlowID:    params.FlowID,
-		CsrfToken: params.CsrfToken,
-		Email:     params.Email,
+	updateVerificationFlowResp, err := p.d.Kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateVerificationFlowRequestBody{
+			CsrfToken: params.CsrfToken,
+			Email:     params.Email,
+		},
 	})
 	if err != nil {
-		verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
-	puthUrl := fmt.Sprintf("/auth/verification/code?flow=%s", params.FlowID)
-	verificationCode.setPushUrl(puthUrl).addParams(map[string]any{
-		"VerificationFlowID": updateVerificationFlowResponse.Flow.FlowID,
-		"CsrfToken":          updateVerificationFlowResponse.Flow.CsrfToken,
-		"IsUsedFlow":         updateVerificationFlowResponse.Flow.IsUsedFlow,
-	}).render(w, session)
+	setCookie(w, updateVerificationFlowResp.Header.Cookie)
+	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", params.FlowID))
+	verificationCodeView.addParams(map[string]any{
+		"VerificationFlowID": updateVerificationFlowResp.Flow.FlowID,
+		"CsrfToken":          updateVerificationFlowResp.Flow.CsrfToken,
+		"IsUsedFlow":         updateVerificationFlowResp.Flow.IsUsedFlow,
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
 // POST /auth/verificatoin/code
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthRegistrationCode
-type postVerificationCodeRequestParams struct {
+type postAuthVerificationCodeRequestParams struct {
 	FlowID    string `validate:"uuid4"`
 	CsrfToken string `validate:"required"`
 	Code      string `validate:"required,len=6,number" ja:"検証コード"`
 }
 
+// Extract parameters from http request
+func newPostAuthVerificationCodeRequestParams(r *http.Request) *postAuthVerificationCodeRequestParams {
+	return &postAuthVerificationCodeRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Code:      r.PostFormValue("code"),
+	}
+}
+
 // Return parameters that can refer in view template
-func (p *postVerificationCodeRequestParams) toViewParams() map[string]any {
+func (p *postAuthVerificationCodeRequestParams) toViewParams() map[string]any {
 	return map[string]any{
 		"VerificationFlowID": p.FlowID,
 		"CsrfToken":          p.CsrfToken,
@@ -886,7 +1019,7 @@ func (p *postVerificationCodeRequestParams) toViewParams() map[string]any {
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postVerificationCodeRequestParams) validate() *viewError {
+func (params *postAuthVerificationCodeRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
 
 	for k := range viewError.validationFieldErrors {
@@ -902,24 +1035,20 @@ func (params *postVerificationCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
-func (p *Provider) handlePostVerificationCode(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := postVerificationCodeRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Code:      r.PostFormValue("code"),
-	}
+	params := newPostAuthVerificationCodeRequestParams(r)
 
 	// prepare views
-	verificationCode := newView(r, "auth/verification/_code_form.html", params.toViewParams())
-	loginIndex := newView(r, "auth/login/index.html", params.toViewParams())
+	verificationCodeView := newView("auth/verification/_code_form.html").addParams(params.toViewParams())
+	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		verificationCode.addParams(viewError.toViewParams()).render(w, session)
+		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -929,31 +1058,41 @@ func (p *Provider) handlePostVerificationCode(w http.ResponseWriter, r *http.Req
 	}))
 
 	// Verification Flow 更新
-	_, err := p.d.Kratos.UpdateVerificationFlow(ctx, w, r, kratos.UpdateVerificationFlowInput{
-		FlowID:    params.FlowID,
-		Code:      params.Code,
-		CsrfToken: params.CsrfToken,
+	updateVerificationFlowResp, err := p.d.Kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateVerificationFlowRequestBody{
+			Code:      params.Code,
+			CsrfToken: params.CsrfToken,
+		},
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())
-		verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	loginFlow, err := p.d.Kratos.CreateLoginFlow(ctx, w, r, kratos.CreateLoginFlowInput{})
+	// Transferring cookies from update registration flow response
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(updateVerificationFlowResp.Header.Cookie, " ")
+	// create login flow
+	createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+		Header: kratosRequestHeader,
+	})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())
-		verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
-	puthUrl := fmt.Sprintf("/auth/login?flow=%s", loginFlow.FlowID)
-	loginIndex.setPushUrl(puthUrl).addParams(map[string]any{
-		"LoginFlowID": loginFlow.FlowID,
+	setCookie(w, createLoginFlowResp.Header.Cookie)
+	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+	loginIndexView.addParams(map[string]any{
+		"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
 		"Information": "コードによる検証が完了しました。お手数ですが改めてログインしてください。",
-		"CsrfToken":   loginFlow.CsrfToken,
-	}).render(w, session)
+		"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -963,6 +1102,14 @@ func (p *Provider) handlePostVerificationCode(w http.ResponseWriter, r *http.Req
 type getAuthLoginRequestParams struct {
 	FlowID   string `validate:"omitempty,uuid4"`
 	ReturnTo string
+}
+
+// Extract parameters from http request
+func newGetAuthLoginRequestParams(r *http.Request) *getAuthLoginRequestParams {
+	return &getAuthLoginRequestParams{
+		FlowID:   r.URL.Query().Get("flow"),
+		ReturnTo: url.QueryEscape(r.URL.Query().Get("return_to")),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -996,21 +1143,14 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := getAuthLoginRequestParams{
-		FlowID:   r.URL.Query().Get("flow"),
-		ReturnTo: url.QueryEscape(r.URL.Query().Get("return_to")),
-	}
-
-	// 認証済みの場合、認証時刻の更新を実施
-	// プロフィール設定時に認証時刻が一定期間内である必要があり、過ぎている場合はログイン画面へリダイレクトし、ログインを促している
-	refresh := isAuthenticated(session)
+	params := newGetAuthLoginRequestParams(r)
 
 	// prepare views
-	loginIndexView := newView(r, "auth/login/index.html", params.toViewParams())
+	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		loginIndexView.addParams(viewError.toViewParams()).render(w, session)
+		loginIndexView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1020,26 +1160,41 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	// create or get registration Flow
-	var err error
-	var loginFlow kratos.LoginFlow
+	var (
+		err                  error
+		loginFlow            kratos.LoginFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		loginFlow, err = p.d.Kratos.CreateLoginFlow(ctx, w, r, kratos.CreateLoginFlowInput{
-			Refresh: refresh,
+		var createLoginFlowResp kratos.CreateLoginFlowResponse
+		createLoginFlowResp, err = p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+			Header:  makeDefaultKratosRequestHeader(r),
+			Refresh: isAuthenticated(session),
 		})
+		kratosResponseHeader = createLoginFlowResp.Header
+		loginFlow = createLoginFlowResp.LoginFlow
 	} else {
-		loginFlow, err = p.d.Kratos.GetLoginFlow(ctx, w, r, kratos.GetLoginFlowInput{
+		var getLoginFlowResp kratos.GetLoginFlowResponse
+		getLoginFlowResp, err = p.d.Kratos.GetLoginFlow(ctx, kratos.GetLoginFlowRequest{
 			FlowID: params.FlowID,
 		})
+		kratosResponseHeader = getLoginFlowResp.Header
+		loginFlow = getLoginFlowResp.LoginFlow
 	}
 	if err != nil {
-		loginIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		loginIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	var information string
-	var traits kratos.Traits
-	showSocialLogin := true
-	if loginFlow.DuplicateIdentifier != "" {
+	// OIDC Registrationの場合で、同一クレデンシャルのIdentityが存在する場合、既存Identityとのリンクを促す
+	var (
+		information     string
+		traits          kratos.Traits
+		showSocialLogin bool
+	)
+	if loginFlow.DuplicateIdentifier == "" {
+		showSocialLogin = true
+	} else {
 		traits.Email = loginFlow.DuplicateIdentifier
 		showSocialLogin = false
 		information = "メールアドレスとパスワードで登録された既存のアカウントが存在します。パスワードを入力してログインすると、Googleのアカウントと連携されます。"
@@ -1049,6 +1204,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// 	information = "プロフィール更新のために、再度ログインをお願いします。"
 	// }
 
+	setCookie(w, kratosResponseHeader.Cookie)
 	loginIndexView.addParams(map[string]any{
 		"LoginFlowID":      loginFlow.FlowID,
 		"ReturnTo":         params.ReturnTo,
@@ -1058,7 +1214,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 		"ShowSocialLogin":  showSocialLogin,
 		"ShowPasskeyLogin": true,
 		"PasskeyChallenge": loginFlow.PasskeyChallenge,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -1070,6 +1226,16 @@ type postAuthLoginRequestParams struct {
 	CsrfToken  string `validate:"required"`
 	Identifier string `validate:"required,email" ja:"メールアドレス"`
 	Password   string `validate:"required" ja:"パスワード"`
+}
+
+// Extract parameters from http request
+func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginRequestParams {
+	return &postAuthLoginRequestParams{
+		FlowID:     r.URL.Query().Get("flow"),
+		CsrfToken:  r.PostFormValue("csrf_token"),
+		Identifier: r.PostFormValue("identifier"),
+		Password:   r.PostFormValue("password"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -1097,20 +1263,16 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	params := postAuthLoginRequestParams{
-		FlowID:     r.URL.Query().Get("flow"),
-		CsrfToken:  r.PostFormValue("csrf_token"),
-		Identifier: r.PostFormValue("identifier"),
-		Password:   r.PostFormValue("password"),
-	}
+	// collect request parameters
+	params := newPostAuthLoginRequestParams(r)
 
 	// prepare views
-	loginForm := newView(r, "auth/login/_form.html", params.toViewParams())
-	topIndex := newView(r, "auth/top/index.html", params.toViewParams())
+	loginFormView := newView("auth/login/_form.html").addParams(params.toViewParams())
+	topIndexView := newView("top/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		loginForm.addParams(viewError.toViewParams()).render(w, session)
+		loginFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1120,19 +1282,30 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	// update login flow
-	_, err := p.d.Kratos.UpdateLoginFlow(ctx, w, r, kratos.UpdateLoginFlowInput{
-		FlowID:     params.FlowID,
-		CsrfToken:  params.CsrfToken,
-		Identifier: params.Identifier,
-		Password:   params.Password,
+	updateLoginFlowResp, err := p.d.Kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateLoginFlowRequestBody{
+			Method:     "password",
+			CsrfToken:  params.CsrfToken,
+			Identifier: params.Identifier,
+			Password:   params.Password,
+		},
 	})
 	if err != nil {
-		loginForm.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// update session
-	session, _ = p.d.Kratos.Whoami(ctx, w, r)
+	session = &updateLoginFlowResp.Session
+
+	// update session
+	// kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	// kratosRequestHeader.Cookie = updateLoginFlowResp.Header.Cookie
+	// whoamiResp, _ := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
+	// 	Header: kratosRequestHeader,
+	// })
 
 	// // ログインフック実行
 	// hook, err := loadAfterLoginHook(r, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE)
@@ -1165,9 +1338,11 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// }
 	// redirect(w, r, redirectTo)
 
-	topIndex.setPushUrl("/").addParams(map[string]any{
+	setCookie(w, updateLoginFlowResp.Header.Cookie)
+	setHeadersForReplaceBody(w, "/")
+	topIndexView.addParams(map[string]any{
 		"Items": items,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -1178,6 +1353,15 @@ type postAuthLoginOidcRequestParams struct {
 	FlowID    string `validate:"uuid4"`
 	CsrfToken string `validate:"required"`
 	Provider  string `validate:"required"`
+}
+
+// Extract parameters from http request
+func newPostAuthLoginOidcRequestParams(r *http.Request) *postAuthLoginOidcRequestParams {
+	return &postAuthLoginOidcRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Provider:  r.PostFormValue("provider"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -1204,18 +1388,16 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	params := postAuthLoginOidcRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Provider:  r.PostFormValue("provider"),
-	}
+	// collect request parameters
+	params := newPostAuthLoginOidcRequestParams(r)
+
 	// prepare views
-	loginForm := newView(r, "auth/login/_form.html", params.toViewParams())
-	topIndex := newView(r, "auth/top/index.html", params.toViewParams())
+	loginFormView := newView("auth/login/_form.html").addParams(params.toViewParams())
+	topIndexView := newView("top/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		loginForm.addParams(viewError.toViewParams()).render(w, session)
+		loginFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1225,58 +1407,58 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	}))
 
 	// update login flow
-	_, err := p.d.Kratos.UpdateOidcLoginFlow(ctx, w, r, kratos.UpdateOidcLoginFlowInput{
-		FlowID:    params.FlowID,
-		CsrfToken: params.CsrfToken,
-		Provider:  params.Provider,
+	updateLoginFlowResp, err := p.d.Kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateLoginFlowRequestBody{
+			Method:    "oidc",
+			CsrfToken: params.CsrfToken,
+			Provider:  params.Provider,
+		},
 	})
 	if err != nil {
-		loginForm.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// update session
-	session, _ = p.d.Kratos.Whoami(ctx, w, r)
+	session = &updateLoginFlowResp.Session
+
+	if updateLoginFlowResp.RedirectBrowserTo != "" {
+		w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
+		return
+	}
 
 	// render
-	topIndex.setPushUrl("/").addParams(map[string]any{
+	setCookie(w, updateLoginFlowResp.Header.Cookie)
+	setHeadersForReplaceBody(w, "/")
+	topIndexView.addParams(map[string]any{
 		"Items": items,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
 // POST /auth/logout
 // --------------------------------------------------------------------------
-
 func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	topIndex := newView(r, "auth/top/index.html", map[string]any{})
+	topIndexView := newView("top/index.html")
 
-	err := p.d.Kratos.Logout(ctx, w, r)
-	// http.SetCookie(w, &http.Cookie{
-	// 	Name:     pkgVars.cookieParams.SessionCookieName,
-	// 	Value:    "",
-	// 	MaxAge:   -1,
-	// 	Path:     pkgVars.cookieParams.Path,
-	// 	Domain:   pkgVars.cookieParams.Domain,
-	// 	Secure:   pkgVars.cookieParams.Secure,
-	// 	HttpOnly: true,
-	// })
+	updateLogoutFlowResp, err := p.d.Kratos.Logout(ctx, kratos.LogoutRequest{
+		Header: makeDefaultKratosRequestHeader(r),
+	})
 	if err != nil {
-		topIndex.setPushUrl("/").addParams(map[string]any{
+		setHeadersForReplaceBody(w, "/")
+		topIndexView.addParams(map[string]any{
 			"Items": items,
-		}).render(w, session)
+		}).render(w, r, session)
 	}
 
-	// update session
-	session, _ = p.d.Kratos.Whoami(ctx, w, r)
-
-	// render
-	topIndex.setPushUrl("/").addParams(map[string]any{
-		"Items": items,
-	}).render(w, session)
+	// change location
+	setCookie(w, updateLogoutFlowResp.Header.Cookie)
+	w.Header().Set("HX-Location", "/")
 }
 
 // --------------------------------------------------------------------------
@@ -1285,6 +1467,13 @@ func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) 
 // Request parameters for handleGetAuthRecovery
 type getAuthRecoveryRequestParams struct {
 	FlowID string
+}
+
+// Extract parameters from http request
+func newGetAuthRecoveryRequestParams(r *http.Request) *getAuthRecoveryRequestParams {
+	return &getAuthRecoveryRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -1318,16 +1507,14 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := getAuthRecoveryRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	params := newGetAuthRecoveryRequestParams(r)
 
 	// prepare views
-	recoveryIndexView := newView(r, "auth/recovery/index.html", params.toViewParams())
+	recoveryIndexView := newView("auth/recovery/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		recoveryIndexView.addParams(viewError.toViewParams()).render(w, session)
+		recoveryIndexView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1336,25 +1523,39 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 		MessageID: "ERR_REGISTRATION_DEFAULT",
 	}))
 
-	var err error
-	var recoveryFlow kratos.RecoveryFlow
+	// create or get recovery Flow
+	var (
+		err                  error
+		recoveryFlow         kratos.RecoveryFlow
+		kratosResponseHeader kratos.KratosResponseHeader
+	)
 	if params.FlowID == "" {
-		recoveryFlow, err = p.d.Kratos.CreateRecoveryFlow(ctx, w, r, kratos.CreateRecoveryFlowInput{})
-	} else {
-		recoveryFlow, err = p.d.Kratos.GetRecoveryFlow(ctx, w, r, kratos.GetRecoveryFlowInput{
-			FlowID: params.FlowID,
+		var createRecoveryFlowResp kratos.CreateRecoveryFlowResponse
+		createRecoveryFlowResp, err = p.d.Kratos.CreateRecoveryFlow(ctx, kratos.CreateRecoveryFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 		})
+		kratosResponseHeader = createRecoveryFlowResp.Header
+		recoveryFlow = createRecoveryFlowResp.RecoveryFlow
+	} else {
+		var getRecoveryFlowResp kratos.GetRecoveryFlowResponse
+		getRecoveryFlowResp, err = p.d.Kratos.GetRecoveryFlow(ctx, kratos.GetRecoveryFlowRequest{
+			FlowID: params.FlowID,
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		kratosResponseHeader = getRecoveryFlowResp.Header
+		recoveryFlow = getRecoveryFlowResp.RecoveryFlow
 	}
 	if err != nil {
-		recoveryIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		recoveryIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
+	setCookie(w, kratosResponseHeader.Cookie)
 	recoveryIndexView.addParams(map[string]any{
 		"RecoveryFlowID": recoveryFlow.FlowID,
 		"CsrfToken":      recoveryFlow.CsrfToken,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -1365,6 +1566,15 @@ type postAuthRecoveryEmailRequestParams struct {
 	FlowID    string `validate:"uuid4"`
 	CsrfToken string `validate:"required"`
 	Email     string `validate:"required,email" ja:"メールアドレス"`
+}
+
+// Extract parameters from http request
+func newPostAutRecoveryEmailRequestParams(r *http.Request) *postAuthRecoveryEmailRequestParams {
+	return &postAuthRecoveryEmailRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Email:     r.PostFormValue("email"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -1392,18 +1602,14 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := postAuthRecoveryEmailRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Email:     r.PostFormValue("email"),
-	}
+	params := newPostAutRecoveryEmailRequestParams(r)
 
 	// prepare views
-	recoveryCodeFormView := newView(r, "auth/recovery/_code_form.html", params.toViewParams())
+	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, session)
+		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1413,13 +1619,16 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	}))
 
 	// update Recovery flow
-	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, w, r, kratos.UpdateRecoveryFlowInput{
-		FlowID:    params.FlowID,
-		CsrfToken: params.CsrfToken,
-		Email:     params.Email,
+	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateRecoveryFlowRequestBody{
+			CsrfToken: params.CsrfToken,
+			Email:     params.Email,
+		},
 	})
 	if err != nil {
-		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1434,7 +1643,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 		"CsrfToken":                params.CsrfToken,
 		"Email":                    params.Email,
 		"ShowRecoveryAnnouncement": true,
-	}).render(w, session)
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -1445,6 +1654,15 @@ type postAuthRecoveryCodeRequestParams struct {
 	FlowID    string `validate:"uuid4"`
 	CsrfToken string `validate:"required"`
 	Code      string `validate:"required,,len=6,number" ja:"復旧コード"`
+}
+
+// Extract parameters from http request
+func newPostAutRecoveryCodeRequestParams(r *http.Request) *postAuthRecoveryCodeRequestParams {
+	return &postAuthRecoveryCodeRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Code:      r.PostFormValue("code"),
+	}
 }
 
 // Return parameters that can refer in view template
@@ -1472,18 +1690,14 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := postAuthRecoveryCodeRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Code:      r.PostFormValue("code"),
-	}
+	params := newPostAutRecoveryCodeRequestParams(r)
 
 	// prepare views
-	recoveryCodeFormView := newView(r, "auth/recovery/_code_form.html", params.toViewParams())
+	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, session)
+		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1493,13 +1707,16 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 	}))
 
 	// Recovery Flow 更新
-	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, w, r, kratos.UpdateRecoveryFlowInput{
-		FlowID:    params.FlowID,
-		CsrfToken: params.CsrfToken,
-		Code:      params.Code,
+	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateRecoveryFlowRequestBody{
+			CsrfToken: params.CsrfToken,
+			Code:      params.Code,
+		},
 	})
 	if err != nil {
-		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, session)
+		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 

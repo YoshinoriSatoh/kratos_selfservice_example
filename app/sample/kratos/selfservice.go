@@ -157,10 +157,10 @@ type UpdateRegistrationFlowRequest struct {
 type UpdateRegistrationFlowRequestBody struct {
 	CsrfToken       string `json:"csrf_token"`
 	Method          string `json:"method"`
-	Traits          Traits `json:"traits"`
-	Password        string `json:"password"`
-	Provider        string `json:"provider"`
-	PasskeyRegister string `json:"passkey_register"`
+	Traits          Traits `json:"traits,omitempty"`
+	Password        string `json:"password,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	PasskeyRegister string `json:"passkey_register,omitempty"`
 }
 
 type UpdateRegistrationFlowResponse struct {
@@ -295,7 +295,7 @@ func (p *Provider) GetVerificationFlow(ctx context.Context, r GetVerificationFlo
 // --------------------------------------------------------------------------
 // Create Verification Flow
 // --------------------------------------------------------------------------
-type CreateVerificationBrowserRequest struct {
+type CreateVerificationFlowRequest struct {
 	Header   KratosRequestHeader
 	ReturnTo string
 }
@@ -310,7 +310,7 @@ type kratosCreateVerificationFlowRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func (p *Provider) CreateVerificationFlow(ctx context.Context, r CreateVerificationBrowserRequest) (CreateVerificationFlowResponse, error) {
+func (p *Provider) CreateVerificationFlow(ctx context.Context, r CreateVerificationFlowRequest) (CreateVerificationFlowResponse, error) {
 	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_VERIFICATION_FLOW
 	if r.ReturnTo != "" {
@@ -353,18 +353,11 @@ type UpdateVerificationFlowRequest struct {
 	Body   UpdateVerificationFlowRequestBody
 }
 
-// type kratosUpdateVerificationFlowRequestBody struct {
-// 	Method    string `json:"method"`
-// 	Email     string `json:"email"`
-// 	Code      string `json:"code"`
-// 	CsrfToken string `json:"csrf_token"`
-// }
-
 type UpdateVerificationFlowRequestBody struct {
 	Method    string `json:"method"`
-	CsrfToken string
-	Code      string
-	Email     string
+	CsrfToken string `json:"csrf_token"`
+	Email     string `json:"email,omitempty"`
+	Code      string `json:"code,omitempty"`
 }
 
 type UpdateVerificationFlowResponse struct {
@@ -387,6 +380,7 @@ func (p *Provider) UpdateVerificationFlow(ctx context.Context, r UpdateVerificat
 	}
 
 	// Request to kratos
+	r.Body.Method = "code" // supported code only
 	kratosInputBytes, err := json.Marshal(r.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateVerificationFlow", "json unmarshal error", err)
@@ -556,21 +550,19 @@ type UpdateLoginFlowRequest struct {
 type UpdateLoginFlowRequestBody struct {
 	CsrfToken  string `json:"csrf_token"`
 	Method     string `json:"method"`
-	Identifier string `json:"identifier"`
-	Password   string `json:"password"`
-	Provider   string `json:"provider"`
+	Identifier string `json:"identifier,omitempty"`
+	Password   string `json:"password,omitempty"`
+	Provider   string `json:"provider,omitempty"`
 }
 
 type UpdateLoginFlowResponse struct {
 	Header            KratosResponseHeader
+	Session           Session
 	RedirectBrowserTo string
 }
 
-type kratosUpdateLoginFlowPasswordRequestBody struct {
-	Method     string `json:"method"`
-	Identifier string `json:"identifier"`
-	Password   string `json:"password"`
-	CsrfToken  string `json:"csrf_token"`
+type kratosUpdateLoginFlowResponseBody struct {
+	Session Session `json:"session"`
 }
 
 // Login Flow の送信(完了)
@@ -612,7 +604,7 @@ func (p *Provider) UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest
 	}
 
 	// Parse response body
-	var kratosRespBody kratosUpdateLoginFlowPasswordRequestBody
+	var kratosRespBody kratosUpdateLoginFlowResponseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
 		return UpdateLoginFlowResponse{}, err
@@ -621,6 +613,7 @@ func (p *Provider) UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest
 	// Create response
 	response := UpdateLoginFlowResponse{
 		Header:            kratosResp.Header,
+		Session:           kratosRespBody.Session,
 		RedirectBrowserTo: redirectBrowserTo,
 	}
 
@@ -678,10 +671,12 @@ func (p *Provider) Logout(ctx context.Context, r LogoutRequest) (LogoutResponse,
 	}
 
 	// Parse response body for update logout flow
-	var kratosRespBodyUpdateLogoutFlow kratosUpdateLogoutFlowRequestBody
-	if err := json.Unmarshal(kratosRespUpdateLogoutFlow.BodyBytes, &kratosRespBodyUpdateLogoutFlow); err != nil {
-		slog.ErrorContext(ctx, "Logout", "json unmarshal error", err)
-		return LogoutResponse{}, err
+	if len(kratosRespUpdateLogoutFlow.BodyBytes) > 0 {
+		var kratosRespBodyUpdateLogoutFlow kratosUpdateLogoutFlowRequestBody
+		if err := json.Unmarshal(kratosRespUpdateLogoutFlow.BodyBytes, &kratosRespBodyUpdateLogoutFlow); err != nil {
+			slog.ErrorContext(ctx, "Logout", "json unmarshal error", err)
+			return LogoutResponse{}, err
+		}
 	}
 
 	// Create response
@@ -799,9 +794,9 @@ type UpdateRecoveryFlowRequest struct {
 }
 
 type UpdateRecoveryFlowRequestBody struct {
-	CsrfToken string
-	Email     string
-	Code      string
+	CsrfToken string `json:"csrf_token"`
+	Email     string `json:"email,omitempty"`
+	Code      string `json:"code,omitempty"`
 }
 
 type UpdateRecoveryFlowResponse struct {
@@ -977,10 +972,10 @@ type UpdateSettingsFlowResponse struct {
 }
 
 type UpdateSettingsFlowRequestBody struct {
-	CsrfToken string
-	Method    string
-	Password  string
-	Traits    Traits
+	Method    string `json:"method"`
+	CsrfToken string `json:"csrf_token"`
+	Password  string `json:"password"`
+	Traits    Traits `json:"traits"`
 }
 
 type kratosUpdateSettingsFlowRespnseBody struct {

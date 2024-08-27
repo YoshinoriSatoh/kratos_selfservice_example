@@ -56,8 +56,8 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	// Authentication Verification
 	mux.Handle("GET /auth/verification", p.baseMiddleware(p.handleGetAuthVerification))
 	mux.Handle("GET /auth/verification/code", p.baseMiddleware(p.handleGetAuthVerificationCode))
-	mux.Handle("POST /auth/verification/email", p.baseMiddleware(p.handlePostVerificationEmail))
-	mux.Handle("POST /auth/verification/code", p.baseMiddleware(p.handlePostVerificationCode))
+	mux.Handle("POST /auth/verification/email", p.baseMiddleware(p.handlePostAuthVerificationEmail))
+	mux.Handle("POST /auth/verification/code", p.baseMiddleware(p.handlePostAuthVerificationCode))
 
 	// Authentication Login
 	mux.Handle("GET /auth/login", p.baseMiddleware(p.handleGetAuthLogin))
@@ -86,7 +86,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("GET /", p.baseMiddleware(p.handleGetTop))
 
 	// Item
-	mux.Handle("GET /item/{id}", p.baseMiddleware(p.handleGetItemDetail))
+	mux.Handle("GET /item/{id}", p.baseMiddleware(p.handleGetItem))
 	mux.Handle("GET /item/{id}/purchase", p.baseMiddleware(p.handleGetItemPurchase))
 	mux.Handle("POST /item/{id}/purchase", p.baseMiddleware(p.handlePostItemPurchase))
 
@@ -111,10 +111,7 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, ctxCookie{}, r.Header.Get("Cookie"))
 
 		whoamiResp, err := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
-			Header: kratos.KratosRequestHeader{
-				Cookie:   r.Header.Get("Cookie"),
-				ClientIP: r.RemoteAddr,
-			},
+			Header: makeDefaultKratosRequestHeader(r),
 		})
 		if err != nil || whoamiResp.Session == nil {
 			ctx = context.WithValue(ctx, ctxSession{}, nil)
@@ -122,8 +119,17 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, ctxSession{}, *whoamiResp.Session)
 		}
 
-		slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path)
+		if r.URL.Path != "/favicon.ico" {
+			slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path)
+		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func makeDefaultKratosRequestHeader(r *http.Request) kratos.KratosRequestHeader {
+	return kratos.KratosRequestHeader{
+		Cookie:   r.Header.Get("Cookie"),
+		ClientIP: r.RemoteAddr,
+	}
 }

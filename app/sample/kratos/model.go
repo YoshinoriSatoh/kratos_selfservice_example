@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// --------------------------------------------------------------------------
+// Identity
+// --------------------------------------------------------------------------
 // Traitsはjsonb型なので要素はstring型
 type Traits struct {
 	Email     string `json:"email" validate:"required,email" ja:"メールアドレス"`
@@ -89,6 +92,9 @@ func (s *Session) NeedLoginWhenPrivilegedAccess() bool {
 	}
 }
 
+// --------------------------------------------------------------------------
+// Flows
+// --------------------------------------------------------------------------
 type RegistrationFlow struct {
 	FlowID             string
 	CredentialType     CredentialsType
@@ -108,7 +114,7 @@ func (f *VerificationFlow) IsUsedFlow() bool {
 	if f.State == "passed_challenge" {
 		return true
 	} else {
-		return false[]
+		return false
 	}
 }
 
@@ -198,7 +204,11 @@ type ErrorUiMessage struct {
 }
 
 func (e ErrorUiMessages) Error() string {
-	return ""
+	var errStr string
+	for _, v := range e {
+		errStr += ". " + v.Text
+	}
+	return errStr
 }
 
 type GenericError struct {
@@ -250,131 +260,3 @@ const (
 	CredentialsTypeOIDC     = CredentialsType("oidc")
 	CredentialsTypePasskey  = CredentialsType("passkey")
 )
-
-// Registration flow
-// type kratosCreateRegisrationFlowRespnse struct {
-// 	ID     string          `json:"id"`
-// 	Ui     uiContainer     `json:"ui"`
-// 	Active CredentialsType `json:"active"`
-// }
-
-// type kratosGetRegisrationFlowRespnse struct {
-// 	ID     string          `json:"id"`
-// 	Ui     uiContainer     `json:"ui"`
-// 	Active CredentialsType `json:"active"`
-// }
-
-// type kratosUpdateRegistrationFlowRequest struct {
-// 	CsrfToken       string  `json:"csrf_token"`
-// 	Method          string  `json:"method"`
-// 	Traits          Traits  `json:"traits"`
-// 	Password        *string `json:"password"`
-// 	Provider        *string `json:"provider"`
-// 	PasskeyRegister *string `json:"passkey_register"`
-// }
-
-// type kratosUpdateRegistrationFlowPasswordMethodRequest struct {
-// 	CsrfToken string `json:"csrf_token"`
-// 	Method    string `json:"method"`
-// 	Traits    Traits `json:"traits"`
-// 	Password  string `json:"password"`
-// }
-
-// type kratosUpdateRegistrationFlowOidcMethodRequest struct {
-// 	CsrfToken string `json:"csrf_token"`
-// 	Method    string `json:"method"`
-// 	Provider  string `json:"provider"`
-// 	Traits    Traits `json:"traits"`
-// }
-
-// type kratosUpdateRegistrationFlowPasskeyMethodRequest struct {
-// 	CsrfToken       string `json:"csrf_token"`
-// 	Method          string `json:"method"`
-// 	Traits          Traits `json:"traits"`
-// 	PasskeyRegister string `json:"passkey_register"`
-// }
-
-// type kratosUpdateRegisrationFlowPasswordRespnse struct {
-// 	RedirectBrowserTo string         `json:"redirect_browser_to"`
-// 	ContinueWith      []continueWith `json:"continue_with"`
-// }
-
-// status code 400 の場合のレスポンスボディのフォーマット
-// ドキュメントではregistration flowが返却される記載しかないが、GenericErrorが返却される場合もある
-// どちらの場合にも対応するため、必要なフィールドを全て定義している
-type kratosBadRequestErrorResponse struct {
-	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *GenericError `json:"error,omitempty"`
-}
-
-// type kratosUpdateRegistrationFlowBadRequestErrorResponse struct {
-// 	Ui    *uiContainer  `json:"ui,omitempty"`
-// 	Error *GenericError `json:"error,omitempty"`
-// }
-
-// Verification flow
-
-// status code 400 の場合のレスポンスボディのフォーマット
-// ドキュメントではverification flowが返却される記載しかないが、GenericErrorが返却される場合もある
-// どちらの場合にも対応するため、必要なフィールドを全て定義している
-// type kratosUpdateVerificationFlowBadRequestErrorResponse struct {
-// 	Ui    *uiContainer  `json:"ui,omitempty"`
-// 	Error *GenericError `json:"error,omitempty"`
-// }
-
-// Login flow
-
-type kratosUpdateLoginFlowPasswordRequest struct {
-	Method     string `json:"method"`
-	Identifier string `json:"identifier"`
-	Password   string `json:"password"`
-	CsrfToken  string `json:"csrf_token"`
-}
-
-type kratosUpdateLoginFlowOidcRequest struct {
-	Method    string `json:"method"`
-	Provider  string `json:"provider"`
-	CsrfToken string `json:"csrf_token"`
-}
-
-// status code 400 の場合のレスポンスボディのフォーマット
-// ドキュメントではverification flowが返却される記載しかないが、GenericErrorが返却される場合もある
-// どちらの場合にも対応するため、必要なフィールドを全て定義している
-type kratosUpdateLoginFlowBadRequestErrorResponse struct {
-	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *GenericError `json:"error,omitempty"`
-}
-
-// Logout flow
-
-// Recovery flow
-
-type kratosGetRecoveryFlowRespnse struct {
-	ID string      `json:"id"`
-	Ui uiContainer `json:"ui"`
-}
-
-type kratosUpdateRecoveryFlowRequest struct {
-	Method    string `json:"method"`
-	Email     string `json:"email"`
-	Code      string `json:"code"`
-	CsrfToken string `json:"csrf_token"`
-}
-
-// Settings flow
-
-type kratosUpdateSettingsFlowRequest struct {
-	Method    string `json:"method"`
-	Password  string `json:"password"`
-	Traits    Traits `json:"traits"`
-	Code      string `json:"code"`
-	CsrfToken string `json:"csrf_token"`
-}
-
-// status code 400 の場合のレスポンスボディのフォーマット
-// ドキュメントではverification flowが返却される記載しかないが、GenericErrorが返却される場合もある
-// どちらの場合にも対応するため、必要なフィールドを全て定義している
-type kratosUpdateSettingsFlowBadRequestErrorResponse struct {
-	Ui    *uiContainer  `json:"ui,omitempty"`
-	Error *GenericError `json:"error,omitempty"`
-}

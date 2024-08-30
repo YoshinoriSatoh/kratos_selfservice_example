@@ -1,10 +1,19 @@
 {{define "auth/recovery/_code_form.html"}}
+
 {{ if eq .ShowRecoveryAnnouncement true }}
-<div class="alert alert-info mt-2">
-  <div>
-    <div>アカウント復旧メールが送信されました。</div>
-    <div>メールに記載されている6桁の復旧コードを入力してください。 </div>
-    <a class="link" href="http://localhost:4436" target="_blank">localhostのメールサーバはこちら</a>
+<div class="container mx-auto px-24 pt-8">
+  <div class="flex p-4 mb-4 text-sm text-blue-800 rounded-lg bg-blue-50 border border-blue-300 dark:bg-gray-800 dark:text-blue-400 dark:border-blue-800" role="alert">
+    <svg class="flex-shrink-0 inline w-4 h-4 me-3 mt-[2px]" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+    </svg>
+    <span class="sr-only">Info</span>
+    <div>
+      <span class="font-medium">アカウント復旧メールが送信されました。</span>
+        <ul class="mt-1.5 list-disc list-inside">
+          <li>メールに記載されている6桁の復旧コードを入力してください。</li>
+          <li><a class="font-semibold underline hover:no-underline" href="http://localhost:4436" target="_blank">localhostのメールサーバはこちら</a></li>
+      </ul>
+    </div>
   </div>
 </div>
 {{end}}
@@ -21,21 +30,20 @@
     value="{{.CsrfToken}}"
   />
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">Recovery code</span>
-      </div>
-      <input 
-        id="code"
-        name="code" 
-        class="input input-bordered"
-      >
-    </label>
+  <div class="my-6">
+    {{ template "components/_input.html" dict 
+      "type" "code" 
+      "name" "code"
+      "label" "復旧コード" 
+      "validationErrorMessage" .ValidationFieldError.Code.Message 
+    }}
   </div>
 
   <div class="mx-auto text-center">
-    <button class="btn btn-primary btn-wide">送信</button>
+    <button 
+      type="submit" 
+      class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >送信</button>
   </div>
 
   {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}

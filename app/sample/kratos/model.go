@@ -98,6 +98,7 @@ func (s *Session) NeedLoginWhenPrivilegedAccess() bool {
 type RegistrationFlow struct {
 	FlowID             string
 	CredentialType     CredentialsType
+	OidcProvider       OidcProvider
 	Traits             Traits
 	PasskeyCreateData  string
 	CsrfToken          string
@@ -257,6 +258,13 @@ type CredentialsType string
 
 const (
 	CredentialsTypePassword = CredentialsType("password")
-	CredentialsTypeOIDC     = CredentialsType("oidc")
+	CredentialsTypeOidc     = CredentialsType("oidc")
 	CredentialsTypePasskey  = CredentialsType("passkey")
+)
+
+type OidcProvider string
+
+const (
+	OidcProviderGoogle = OidcProvider("google")
+	OidcProviderGithub = OidcProvider("github")
 )

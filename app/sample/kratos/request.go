@@ -99,10 +99,12 @@ type kratosBadRequestErrorResponse struct {
 
 func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error {
 	if statusCode == http.StatusOK {
+		// UI Containerのmessages(type=error)があれば取得する
 		var resp kratosSuccessResponse
 		if err := json.Unmarshal(bodyBytes, &resp); err != nil {
-			slog.ErrorContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
-			return err
+			// status=okの場合に、レスポンスにuiがない場合はエラーがないものとして扱う
+			// slog.DebugContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
+			return nil
 		}
 		if resp.Ui == nil {
 			return nil
@@ -186,4 +188,16 @@ func getDuplicateIdentifierFromUi(ui uiContainer) string {
 	}
 
 	return ""
+}
+
+func hasUiError(err error, id int64) bool {
+	var kratosErrorUiMessages ErrorUiMessages
+	if errors.As(err, &kratosErrorUiMessages) {
+		for _, v := range err.(ErrorUiMessages) {
+			if v.ID == id {
+				return true
+			}
+		}
+	}
+	return false
 }

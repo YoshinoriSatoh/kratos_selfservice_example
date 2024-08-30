@@ -1,14 +1,16 @@
 {{define "auth/login/index.html"}}
 {{template "layout/_header.html" .}}
 
-
 <div class="container mx-auto px-24">
   <h2 class="text-lg text-center font-bold">ログイン</h2>
+
+  <div class="my-4 items-center border-t dark:border-gray-600"></div>
+  <h3 class="text-md text-center">パスワードでログイン</h2>
   <div class="text-right">
     <a class="text-blue-500 text-sm" href="/auth/registration">会員登録はこちら</a> 
   </div>
 
-  {{ if and (ne .Information "") (ne .Information nil) }}
+  <!-- {{ if and (ne .Information "") (ne .Information nil) }} -->
   <div class="flex items-center p-4 my-4 text-sm text-blue-800 border border-blue-300 rounded-lg bg-blue-50 dark:bg-gray-800 dark:text-blue-400 dark:border-blue-800" role="alert">
     <svg class="flex-shrink-0 inline w-4 h-4 me-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
       <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
@@ -16,7 +18,7 @@
     <span class="sr-only">Info</span>
     <div>{{ .Information }} </div>
   </div>
-  {{end}}
+  <!-- {{end}} -->
   
   {{template "auth/login/_form.html" .}}
 
@@ -28,11 +30,17 @@
   </div>
   {{ end }}
 
+  {{ if eq .ShowPasskeyLogin true }}
+  {{template "auth/login/_form_passkey.html" .}}
+  {{ end }}
+
+  {{ if eq .ShowSocialLogin true }}
   <form 
-    id="login-form-google"
-    hx-post="/auth/login?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
+    id="social-login-form"
+    hx-post="/auth/login/passkey?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
     hx-swap="outerHTML" 
     hx-target="this"
+    hx-trigger="post_after_passkey_got_credential"
     class="mb-4"
   >
     <input
@@ -41,12 +49,11 @@
       value="{{.CsrfToken}}"
     />
 
-    {{ if eq .ShowSocialLogin true }}
     <div class="mx-auto text-center">
       <button 
         type="button" 
         class="sm:w-80 text-white bg-[#4285F4] hover:bg-[#4285F4]/90 focus:ring-4 focus:outline-none focus:ring-[#4285F4]/50 font-medium rounded-lg text-sm pl-24 py-2.5 text-center inline-flex dark:focus:ring-[#4285F4]/55 me-2 mb-2"
-        hx-post="/auth/login/oidc?flow={{.LoginFlowID}}" 
+        hx-post="/auth/login/oidc?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
         hx-vals='{"provider": "google"}'
         hx-swap="outerHTML" 
         hx-target="this">
@@ -59,34 +66,25 @@
     <div class="mx-auto mt-4 text-center">
       <button 
         type="button" 
-        class="sm:w-80 text-white bg-[#24292F] hover:bg-[#24292F]/90 focus:ring-4 focus:outline-none focus:ring-[#24292F]/50 font-medium rounded-lg text-sm pl-24 py-2.5 text-center inline-flex items-center dark:focus:ring-gray-500 dark:hover:bg-[#050708]/30 me-2 mb-2">
+        class="sm:w-80 text-white bg-[#24292F] hover:bg-[#24292F]/90 focus:ring-4 focus:outline-none focus:ring-[#24292F]/50 font-medium rounded-lg text-sm pl-24 py-2.5 text-center inline-flex items-center dark:focus:ring-gray-500 dark:hover:bg-[#050708]/30 me-2 mb-2"
+        hx-post="/auth/login/oidc?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
+        hx-vals='{"provider": "github"}'
+        hx-swap="outerHTML" 
+        hx-target="this">
         <svg class="w-4 h-4 me-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M10 .333A9.911 9.911 0 0 0 6.866 19.65c.5.092.678-.215.678-.477 0-.237-.01-1.017-.014-1.845-2.757.6-3.338-1.169-3.338-1.169a2.627 2.627 0 0 0-1.1-1.451c-.9-.615.07-.6.07-.6a2.084 2.084 0 0 1 1.518 1.021 2.11 2.11 0 0 0 2.884.823c.044-.503.268-.973.63-1.325-2.2-.25-4.516-1.1-4.516-4.9A3.832 3.832 0 0 1 4.7 7.068a3.56 3.56 0 0 1 .095-2.623s.832-.266 2.726 1.016a9.409 9.409 0 0 1 4.962 0c1.89-1.282 2.717-1.016 2.717-1.016.366.83.402 1.768.1 2.623a3.827 3.827 0 0 1 1.02 2.659c0 3.807-2.319 4.644-4.525 4.889a2.366 2.366 0 0 1 .673 1.834c0 1.326-.012 2.394-.012 2.72 0 .263.18.572.681.475A9.911 9.911 0 0 0 10 .333Z" clip-rule="evenodd"/>
         </svg>
         Githubでログイン
       </button>
     </div>
-    {{end}}
-  
-    {{ if eq .ShowPasskeyLogin true }}
-    <div class="mx-auto mt-4 text-center">
-      <button 
-        type="button" 
-        class="sm:w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
-      >パスキーでログイン</button>
-    </div> 
-    {{end}}
-  
-    {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
-      <div class="mt-6">
-        {{ template "compnents/_messages.html" .Messages }}
-      </div>
     {{ end }}
   </form> 
 
-  <div class="text-right">
-    <a class="text-blue-500 text-sm" href="/auth/recovery">パスワードを忘れた場合はこちら</a> 
-  </div>
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
 </div>
 
 {{template "layout/_footer.html" .}}

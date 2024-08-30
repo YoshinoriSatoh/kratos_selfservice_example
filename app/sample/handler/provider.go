@@ -47,8 +47,8 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 
 	// Authentication Registration
 	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
-	mux.Handle("GET /auth/registration/oidc", p.baseMiddleware(p.handleGetAuthRegistrationOidc))
-	mux.Handle("GET /auth/registration/passkey", p.baseMiddleware(p.handleGetAuthRegistrationPasskey))
+	// mux.Handle("GET /auth/registration/password_oidc", p.baseMiddleware(p.handleGetAuthRegistration))
+	// mux.Handle("GET /auth/registration/passkey", p.baseMiddleware(p.handleGetAuthRegistrationPasskey))
 	mux.Handle("POST /auth/registration", p.baseMiddleware(p.handlePostAuthRegistration))
 	mux.Handle("POST /auth/registration/oidc", p.baseMiddleware(p.handlePostAuthRegistrationOidc))
 	mux.Handle("POST /auth/registration/passkey", p.baseMiddleware(p.handlePostAuthRegistrationPasskey))
@@ -63,6 +63,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("GET /auth/login", p.baseMiddleware(p.handleGetAuthLogin))
 	mux.Handle("POST /auth/login", p.baseMiddleware(p.handlePostAuthLogin))
 	mux.Handle("POST /auth/login/oidc", p.baseMiddleware(p.handlePostAuthLoginOidc))
+	mux.Handle("POST /auth/login/passkey", p.baseMiddleware(p.handlePostAuthLoginPasskey))
 
 	// Authentication Logout
 	mux.Handle("POST /auth/logout", p.baseMiddleware(p.handlePostAuthLogout))

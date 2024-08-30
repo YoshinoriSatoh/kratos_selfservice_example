@@ -1,5 +1,4 @@
 {{define "auth/login/_form.html"}}
-
 <form 
   id="login-form"
   hx-post="/auth/login?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
@@ -12,7 +11,7 @@
     value="{{.CsrfToken}}"
   />
 
-  <input
+  <!-- <input
     name="passkey_challenge"
     type="hidden"
     value="{{.PasskeyChallenge}}"
@@ -21,7 +20,7 @@
   <input
     name="passkey_login"
     type="hidden"
-  />
+  /> -->
 
   <div class="mb-6">
     {{ template "components/_input.html" dict 
@@ -46,7 +45,11 @@
     <button 
       type="submit" 
       class="sm:w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
-    >ログイン</button>
+    >パスワードでログイン</button>
+  </div>
+
+  <div class="text-right">
+    <a class="link text-blue-500 text-sm" href="/auth/recovery">パスワードを忘れた場合はこちら</a> 
   </div>
 
   {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
@@ -55,5 +58,4 @@
     </div>
   {{ end }}
 </form> 
-
 {{end}}

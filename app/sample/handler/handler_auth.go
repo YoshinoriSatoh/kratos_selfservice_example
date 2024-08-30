@@ -14,16 +14,19 @@ import (
 
 // --------------------------------------------------------------------------
 // GET /auth/registration
+// also used from oidc callback ui url when missing required fields in traits.
 // --------------------------------------------------------------------------
 // Request parameters for handleGetAuthRegistration
 type getAuthRegistrationRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
+	FlowID              string `validate:"omitempty,uuid4"`
+	PasskeyRegistration bool   `validate:"omitempty"`
 }
 
 // Extract parameters from http request
-func newGetAuthRegistrationRequestParams(r *http.Request) *getAuthRegistrationRequestParams {
+func newgetAuthRegistrationRequestParams(r *http.Request) *getAuthRegistrationRequestParams {
 	return &getAuthRegistrationRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
+		FlowID:              r.URL.Query().Get("flow"),
+		PasskeyRegistration: r.URL.Query().Get("passkey_registration") == "true",
 	}
 }
 
@@ -62,14 +65,16 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := newGetAuthRegistrationRequestParams(r)
+	params := newgetAuthRegistrationRequestParams(r)
 
 	// prepare views
-	registrationIndexView := newView("auth/registration/index.html").addParams(params.toViewParams())
+	registrationIndexPasswordView := newView("auth/registration/index.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "password"})
+	registrationIndexOidcView := newView("auth/registration/index.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "oidc"})
+	registrationIndexPasskeyView := newView("auth/registration/index.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "passkey"})
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationIndexView.addParams(viewError.toViewParams()).render(w, r, session)
+		registrationIndexPasswordView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -101,261 +106,187 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 		registrationFlow = getRegistrationFlowResp.RegistrationFlow
 	}
 	if err != nil {
-		registrationIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		registrationIndexPasswordView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// render page
-	setCookie(w, kratosResponseHeader.Cookie)
-	registrationIndexView.addParams(map[string]any{
-		"RegistrationFlowID": registrationFlow.FlowID,
-		"CsrfToken":          registrationFlow.CsrfToken,
-	}).render(w, r, session)
-}
+	if registrationFlow.CredentialType == kratos.CredentialsTypePassword {
 
-// --------------------------------------------------------------------------
-// GET /auth/registration/oidc
-// --------------------------------------------------------------------------
-// Request parameters for handleGetAuthRegistrationOidc
-type getAuthRegistrationOidcRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
-}
+		// render page
+		setCookie(w, kratosResponseHeader.Cookie)
+		setHeadersForReplaceBody(w, "/auth/registration")
 
-// Extract parameters from http request
-func newGetAuthRegistrationOidcRequestParams(r *http.Request) *getAuthRegistrationOidcRequestParams {
-	return &getAuthRegistrationOidcRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
-}
-
-// Return parameters that can refer in view template
-func (p *getAuthRegistrationOidcRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"RegistrationFlowID": p.FlowID,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthRegistrationOidcRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(p))
-
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-			break
+		if params.PasskeyRegistration {
+			registrationIndexPasskeyView.addParams(map[string]any{
+				"RegistrationFlowID": registrationFlow.FlowID,
+				"CsrfToken":          registrationFlow.CsrfToken,
+				"Traits":             registrationFlow.Traits,
+				"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
+			}).render(w, r, session)
+		} else {
+			registrationIndexPasswordView.addParams(map[string]any{
+				"RegistrationFlowID": registrationFlow.FlowID,
+				"CsrfToken":          registrationFlow.CsrfToken,
+			}).render(w, r, session)
 		}
-	}
 
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// GET /auth/registration/oidc
-func (p *Provider) handleGetAuthRegistrationOidc(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect request parameters
-	params := newGetAuthRegistrationOidcRequestParams(r)
-
-	// prepare views
-	registrationOidcView := newView("auth/registration/oidc.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		registrationOidcView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
-	}
-
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
-	}))
-
-	// create or get registration Flow
-	var (
-		err                  error
-		registrationFlow     kratos.RegistrationFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if params.FlowID == "" {
-		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
-		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = createRegistrationFlowResp.Header
-		registrationFlow = createRegistrationFlowResp.RegistrationFlow
-	} else {
-		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
-		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
-			FlowID: params.FlowID,
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = getRegistrationFlowResp.Header
-		registrationFlow = getRegistrationFlowResp.RegistrationFlow
-	}
-	if err != nil {
-		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-
-	// validate registration flow credential type
-	if registrationFlow.CredentialType == kratos.CredentialsTypeOIDC {
-		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-
-	// Update identity when user already registered with the same credential of provided the oidc provider.
-	identities, err := p.d.Kratos.AdminListIdentities(ctx, kratos.AdminListIdentitiesRequest{
-		CredentialIdentifier: registrationFlow.Traits.Email,
-	})
-	if err != nil {
-		registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-	if len(identities) > 1 {
-		message := pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_DEFAULT",
-		})
-		registrationOidcView.addParams(baseViewError.setMessages([]string{message}).toViewParams()).render(w, r, session)
-		return
-	}
-	if len(identities) == 1 {
-		// Transferring cookies from create or get registration flow response
-		kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-		kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
-
-		// update Registration Flow
-		_, err = p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
-			FlowID: registrationFlow.FlowID,
-			Header: kratosRequestHeader,
-			Body: kratos.UpdateRegistrationFlowRequestBody{
-				Method:    "oidc",
-				CsrfToken: registrationFlow.CsrfToken,
-				Provider:  "google",
-				Traits:    identities[0].Traits,
-			},
+	} else if registrationFlow.CredentialType == kratos.CredentialsTypeOidc {
+		// Update identity when user already registered with the same credential of provided the oidc provider.
+		identities, err := p.d.Kratos.AdminListIdentities(ctx, kratos.AdminListIdentitiesRequest{
+			CredentialIdentifier: registrationFlow.Traits.Email,
 		})
 		if err != nil {
-			registrationOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			registrationIndexOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
-	}
 
-	// render page
-	setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
-	registrationOidcView.addParams(map[string]any{
-		"RegistrationFlowID": registrationFlow.FlowID,
-		"CsrfToken":          registrationFlow.CsrfToken,
-		"Traits":             registrationFlow.Traits,
-	}).render(w, r, session)
-
-}
-
-// --------------------------------------------------------------------------
-// GET /auth/registration/passkey
-// --------------------------------------------------------------------------
-// Request parameters for handleGetAuthRegistrationPasskey
-type getAuthRegistrationdPasskeyRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
-}
-
-// Extract parameters from http request
-func newGetAuthRegistrationPasskeyRequestParams(r *http.Request) *getAuthRegistrationdPasskeyRequestParams {
-	return &getAuthRegistrationdPasskeyRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
-}
-
-// Return parameters that can refer in view template
-func (p *getAuthRegistrationdPasskeyRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"RegistrationFlowID": p.FlowID,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthRegistrationdPasskeyRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(p))
-
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-			break
+		if len(identities) > 1 {
+			message := pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+				MessageID: "ERR_DEFAULT",
+			})
+			registrationIndexOidcView.addParams(baseViewError.setMessages([]string{message}).toViewParams()).render(w, r, session)
+			return
 		}
-	}
+		if len(identities) == 1 {
+			// Transferring cookies from create or get registration flow response
+			kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+			kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 
-	// Individual validations write here that cannot validate in common validations
+			// update Registration Flow
+			kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+				FlowID: registrationFlow.FlowID,
+				Header: kratosRequestHeader,
+				Body: kratos.UpdateRegistrationFlowRequestBody{
+					Method:    "oidc",
+					CsrfToken: registrationFlow.CsrfToken,
+					Provider:  string(registrationFlow.OidcProvider),
+					Traits:    identities[0].Traits,
+				},
+			})
+			if err != nil {
+				registrationIndexOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				return
+			}
+			setCookie(w, kratosResp.Header.Cookie)
+			if kratosResp.RedirectBrowserTo != "" {
+				// w.Header().Set("HX-Redirect", kratosResp.RedirectBrowserTo)
+				redirect(w, r, kratosResp.RedirectBrowserTo)
+			}
+		}
 
-	return viewError
-}
+		// render page
+		setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
+		registrationIndexOidcView.addParams(map[string]any{
+			"RegistrationFlowID": registrationFlow.FlowID,
+			"CsrfToken":          registrationFlow.CsrfToken,
+			"Provider":           registrationFlow.OidcProvider,
+			"Traits":             registrationFlow.Traits,
+		}).render(w, r, session)
 
-// GET /auth/registration/passkey
-func (p *Provider) handleGetAuthRegistrationPasskey(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	params := newGetAuthRegistrationOidcRequestParams(r)
-
-	// prepare views
-	registrationPasskeyView := newView("auth/registration/passkey.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		registrationPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
-	}
-
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
-	}))
-
-	// create or get registration Flow
-	var (
-		err                  error
-		registrationFlow     kratos.RegistrationFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if params.FlowID == "" {
-		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
-		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = createRegistrationFlowResp.Header
-		registrationFlow = createRegistrationFlowResp.RegistrationFlow
 	} else {
-		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
-		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
-			FlowID: params.FlowID,
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = getRegistrationFlowResp.Header
-		registrationFlow = getRegistrationFlowResp.RegistrationFlow
+		slog.ErrorContext(ctx, "invalid credential type", "credential type", registrationFlow.CredentialType)
 	}
-	if err != nil {
-		registrationPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-
-	// render page
-	setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
-	registrationPasskeyView.addParams(map[string]any{
-		"RegistrationFlowID": registrationFlow.FlowID,
-		"CsrfToken":          registrationFlow.CsrfToken,
-		"Traits":             registrationFlow.Traits,
-		"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
-	}).render(w, r, session)
 }
+
+// // --------------------------------------------------------------------------
+// // GET /auth/registration/passkey
+// // --------------------------------------------------------------------------
+// // Request parameters for handleGetAuthRegistrationPasskey
+// type getAuthRegistrationdPasskeyRequestParams struct {
+// 	FlowID string `validate:"omitempty,uuid4"`
+// }
+
+// // Extract parameters from http request
+// func newGetAuthRegistrationPasskeyRequestParams(r *http.Request) *getAuthRegistrationdPasskeyRequestParams {
+// 	return &getAuthRegistrationdPasskeyRequestParams{
+// 		FlowID: r.URL.Query().Get("flow"),
+// 	}
+// }
+
+// // Return parameters that can refer in view template
+// func (p *getAuthRegistrationdPasskeyRequestParams) toViewParams() map[string]any {
+// 	return map[string]any{
+// 		"RegistrationFlowID": p.FlowID,
+// 	}
+// }
+
+// // Validate request parameters and return viewError
+// // If you do not want Validation errors to be displayed near input fields,
+// // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
+// func (p *getAuthRegistrationdPasskeyRequestParams) validate() *viewError {
+// 	viewError := newViewError().extract(pkgVars.validate.Struct(p))
+
+// 	for k := range viewError.validationFieldErrors {
+// 		if k == "FlowID" {
+// 			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+// 				MessageID: "ERR_FALLBACK",
+// 			})))
+// 			break
+// 		}
+// 	}
+
+// 	// Individual validations write here that cannot validate in common validations
+
+// 	return viewError
+// }
+
+// // GET /auth/registration/passkey
+// func (p *Provider) handleGetAuthRegistrationPasskey(w http.ResponseWriter, r *http.Request) {
+// 	ctx := r.Context()
+// 	session := getSession(ctx)
+
+// 	params := newGetAuthRegistrationPasskeyRequestParams(r)
+
+// 	// prepare views
+// 	registrationPasskeyView := newView("auth/registration/passkey.html").addParams(params.toViewParams())
+
+// 	// validate request parameters
+// 	if viewError := params.validate(); viewError.hasError() {
+// 		registrationPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
+// 		return
+// 	}
+
+// 	// base view error
+// 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+// 		MessageID: "ERR_REGISTRATION_DEFAULT",
+// 	}))
+
+// 	// create or get registration Flow
+// 	var (
+// 		err                  error
+// 		registrationFlow     kratos.RegistrationFlow
+// 		kratosResponseHeader kratos.KratosResponseHeader
+// 	)
+// 	if params.FlowID == "" {
+// 		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
+// 		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
+// 			Header: makeDefaultKratosRequestHeader(r),
+// 		})
+// 		kratosResponseHeader = createRegistrationFlowResp.Header
+// 		registrationFlow = createRegistrationFlowResp.RegistrationFlow
+// 	} else {
+// 		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
+// 		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
+// 			FlowID: params.FlowID,
+// 			Header: makeDefaultKratosRequestHeader(r),
+// 		})
+// 		kratosResponseHeader = getRegistrationFlowResp.Header
+// 		registrationFlow = getRegistrationFlowResp.RegistrationFlow
+// 	}
+// 	if err != nil {
+// 		registrationPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+// 		return
+// 	}
+
+// 	// render page
+// 	setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
+// 	registrationPasskeyView.addParams(map[string]any{
+// 		"RegistrationFlowID": registrationFlow.FlowID,
+// 		"CsrfToken":          registrationFlow.CsrfToken,
+// 		"Traits":             registrationFlow.Traits,
+// 		"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
+// 	}).render(w, r, session)
+// }
 
 // --------------------------------------------------------------------------
 // POST /auth/registration
@@ -440,7 +371,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	params := newPostAuthRegistrationRequestParams(r)
 
 	// prepare views
-	registrationFormView := newView("auth/registration/_form.html").addParams(params.toViewParams())
+	registrationFormView := newView("auth/registration/_form.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "password"})
 	verificationCodeView := newView("auth/verification/code.html").addParams(params.toViewParams())
 
 	// validate request parameters
@@ -566,7 +497,7 @@ func (p *Provider) handlePostAuthRegistrationOidc(w http.ResponseWriter, r *http
 	params := newPostAuthRegistrationOidcRequestParams(r)
 
 	// prepare views
-	registrationFormOidc := newView("auth/registration/_form_oidc.html").addParams(params.toViewParams())
+	registrationFormOidc := newView("auth/registration/_form.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "oidc"})
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
@@ -595,6 +526,7 @@ func (p *Provider) handlePostAuthRegistrationOidc(w http.ResponseWriter, r *http
 		return
 	}
 
+	setCookie(w, kratosResp.Header.Cookie)
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
 	}
@@ -670,11 +602,12 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 	params := newPostAuthRegistrationPasskeyRequestParams(r)
 
 	// prepare views
-	registrationFormPasskey := newView("auth/registration/_form_passkey.html").addParams(params.toViewParams())
+	registrationFormPasskeyView := newView("auth/registration/_form.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "passkey"})
+	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		registrationFormPasskey.addParams(viewError.toViewParams()).render(w, r, session)
+		registrationFormPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -694,15 +627,54 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 			PasskeyRegister: params.PasskeyRegister,
 		},
 	})
-	if err != nil {
-		registrationFormPasskey.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	if err != nil && kratosResp.DuplicateIdentifier == "" {
+		registrationFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
+	fmt.Println(kratosResp.RedirectBrowserTo)
 
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
 		w.WriteHeader(http.StatusOK)
 	}
+
+	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促す
+	var (
+		information     string
+		traits          kratos.Traits
+		showSocialLogin bool
+	)
+	if kratosResp.DuplicateIdentifier == "" {
+		showSocialLogin = true
+	} else {
+		traits.Email = kratosResp.DuplicateIdentifier
+		showSocialLogin = false
+		information = "メールアドレスとパスワードで登録された既存のアカウントが存在します。パスワードを入力してログインすると、Googleのアカウントと連携されます。"
+	}
+
+	// Transferring cookies from update registration flow response
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(kratosResp.Header.Cookie, " ")
+	// create login flow
+	createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+		Header: kratosRequestHeader,
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "update verification error", "err", err.Error())
+		registrationFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+	setCookie(w, kratosResp.Header.Cookie)
+	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+	loginIndexView.addParams(map[string]any{
+		"LoginFlowID":      createLoginFlowResp.LoginFlow.FlowID,
+		"Information":      information,
+		"CsrfToken":        createLoginFlowResp.LoginFlow.CsrfToken,
+		"Traits":           traits,
+		"ShowSocialLogin":  showSocialLogin,
+		"ShowPasskeyLogin": true,
+		"PasskeyChallenge": createLoginFlowResp.LoginFlow.PasskeyChallenge,
+	}).render(w, r, session)
 
 	// Registration flow成功時はVerification flowへリダイレクト
 	// redirect(w, r, fmt.Sprintf("%s?flow=%s", "/auth/verification/code", output.VerificationFlowID))
@@ -787,6 +759,7 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	} else {
 		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
 		getVerificatoinFlowResp, err = p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 			FlowID: params.FlowID,
 		})
 		kratosResponseHeader = getVerificatoinFlowResp.Header
@@ -885,6 +858,7 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	} else {
 		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
 		getVerificatoinFlowResp, err = p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 			FlowID: params.FlowID,
 		})
 		kratosResponseHeader = getVerificatoinFlowResp.Header
@@ -1115,7 +1089,7 @@ func newGetAuthLoginRequestParams(r *http.Request) *getAuthLoginRequestParams {
 // Return parameters that can refer in view template
 func (p *getAuthLoginRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"RegistrationFlowID": p.FlowID,
+		"LoginFlowID": p.FlowID,
 	}
 }
 
@@ -1176,17 +1150,19 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var getLoginFlowResp kratos.GetLoginFlowResponse
 		getLoginFlowResp, err = p.d.Kratos.GetLoginFlow(ctx, kratos.GetLoginFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
 			FlowID: params.FlowID,
 		})
 		kratosResponseHeader = getLoginFlowResp.Header
 		loginFlow = getLoginFlowResp.LoginFlow
 	}
-	if err != nil {
+	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない
+	if err != nil && loginFlow.DuplicateIdentifier == "" {
 		loginIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// OIDC Registrationの場合で、同一クレデンシャルのIdentityが存在する場合、既存Identityとのリンクを促す
+	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促す
 	var (
 		information     string
 		traits          kratos.Traits
@@ -1423,13 +1399,108 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 
 	// update session
 	session = &updateLoginFlowResp.Session
+	setCookie(w, updateLoginFlowResp.Header.Cookie)
 
 	if updateLoginFlowResp.RedirectBrowserTo != "" {
-		w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
+		// w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
+		redirect(w, r, updateLoginFlowResp.RedirectBrowserTo)
 		return
 	}
 
 	// render
+	setHeadersForReplaceBody(w, "/")
+	topIndexView.addParams(map[string]any{
+		"Items": items,
+	}).render(w, r, session)
+}
+
+// --------------------------------------------------------------------------
+// POST /auth/login/passkey
+// --------------------------------------------------------------------------
+// Request parameters for handlePostAuthLoginPasskey
+type postAuthLoginPasskeyRequestParams struct {
+	FlowID    string `validate:"uuid4"`
+	CsrfToken string `validate:"required"`
+	// Identifier   string `validate:"required,email" ja:"メールアドレス"`
+	PasskeyLogin     string `validate:"required"`
+	PasskeyChallenge string `validate:"required"`
+}
+
+// Extract parameters from http request
+func newPostAuthLoginPasskeyRequestParams(r *http.Request) *postAuthLoginPasskeyRequestParams {
+	return &postAuthLoginPasskeyRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		// Identifier:   r.PostFormValue("identifier"),
+		PasskeyLogin:     r.PostFormValue("passkey_login"),
+		PasskeyChallenge: r.PostFormValue("passkey_challenge"),
+	}
+}
+
+// Return parameters that can refer in view template
+func (p *postAuthLoginPasskeyRequestParams) toViewParams() map[string]any {
+	return map[string]any{
+		"LoginFlowID": p.FlowID,
+		"CsrfToken":   p.CsrfToken,
+		// "Identifier":   p.Identifier,
+		"PasskeyLogin":     p.PasskeyLogin,
+		"PasskeyChallenge": p.PasskeyChallenge,
+	}
+}
+
+// Validate request parameters and return viewError
+// If you do not want Validation errors to be displayed near input fields,
+// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
+func (params *postAuthLoginPasskeyRequestParams) validate() *viewError {
+	viewError := newViewError().extract(pkgVars.validate.Struct(params))
+	fmt.Println(viewError)
+
+	// Individual validations write here that cannot validate in common validations
+
+	return viewError
+}
+
+func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect request parameters
+	params := newPostAuthLoginPasskeyRequestParams(r)
+
+	// prepare views
+	loginFormPasskeyView := newView("auth/login/_form_passkey.html").addParams(params.toViewParams())
+	topIndexView := newView("top/index.html").addParams(params.toViewParams())
+
+	// validate request parameters
+	if viewError := params.validate(); viewError.hasError() {
+		loginFormPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
+		return
+	}
+
+	// base view error
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_REGISTRATION_DEFAULT",
+	}))
+
+	// update login flow
+	updateLoginFlowResp, err := p.d.Kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+		FlowID: params.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateLoginFlowRequestBody{
+			Method:    "passkey",
+			CsrfToken: params.CsrfToken,
+			// Identifier:   params.Identifier,
+			PasskeyLogin: params.PasskeyLogin,
+		},
+	})
+	if err != nil {
+		loginFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+
+	// update session
+	session = &updateLoginFlowResp.Session
+
 	setCookie(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	topIndexView.addParams(map[string]any{
@@ -1479,7 +1550,7 @@ func newGetAuthRecoveryRequestParams(r *http.Request) *getAuthRecoveryRequestPar
 // Return parameters that can refer in view template
 func (p *getAuthRecoveryRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"RegistrationFlowID": p.FlowID,
+		"RecoveryFlowID": p.FlowID,
 	}
 }
 
@@ -1580,9 +1651,9 @@ func newPostAutRecoveryEmailRequestParams(r *http.Request) *postAuthRecoveryEmai
 // Return parameters that can refer in view template
 func (p *postAuthRecoveryEmailRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"RegistrationFlowID": p.FlowID,
-		"CsrfToken":          p.CsrfToken,
-		"Email":              p.Email,
+		"RecoveryFlowID": p.FlowID,
+		"CsrfToken":      p.CsrfToken,
+		"Email":          p.Email,
 	}
 }
 
@@ -1605,11 +1676,12 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	params := newPostAutRecoveryEmailRequestParams(r)
 
 	// prepare views
+	recoveryEmailFormView := newView("auth/recovery/_email_form.html").addParams(params.toViewParams())
 	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, r, session)
+		recoveryEmailFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -1624,13 +1696,15 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRecoveryFlowRequestBody{
 			CsrfToken: params.CsrfToken,
+			Method:    "code",
 			Email:     params.Email,
 		},
 	})
 	if err != nil {
-		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		recoveryEmailFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
+	setCookie(w, kratosResp.Header.Cookie)
 
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
@@ -1653,7 +1727,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 type postAuthRecoveryCodeRequestParams struct {
 	FlowID    string `validate:"uuid4"`
 	CsrfToken string `validate:"required"`
-	Code      string `validate:"required,,len=6,number" ja:"復旧コード"`
+	Code      string `validate:"required,len=6,number" ja:"復旧コード"`
 }
 
 // Extract parameters from http request
@@ -1668,9 +1742,9 @@ func newPostAutRecoveryCodeRequestParams(r *http.Request) *postAuthRecoveryCodeR
 // Return parameters that can refer in view template
 func (p *postAuthRecoveryCodeRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"RegistrationFlowID": p.FlowID,
-		"CsrfToken":          p.CsrfToken,
-		"Code":               p.Code,
+		"RecoveryFlowID": p.FlowID,
+		"CsrfToken":      p.CsrfToken,
+		"Code":           p.Code,
 	}
 }
 
@@ -1712,6 +1786,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRecoveryFlowRequestBody{
 			CsrfToken: params.CsrfToken,
+			Method:    "code",
 			Code:      params.Code,
 		},
 	})
@@ -1720,6 +1795,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	setCookie(w, kratosResp.Header.Cookie)
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
 		w.WriteHeader(http.StatusOK)

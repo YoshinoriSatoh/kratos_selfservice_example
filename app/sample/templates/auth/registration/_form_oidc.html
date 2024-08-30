@@ -12,83 +12,59 @@
     value="{{.CsrfToken}}"
   />
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text font-semibold">メールアドレス</span>
-      </div>
-      <input 
-        id="email"
-        name="traits.email" 
-        value="{{.Traits.Email}}"
-        placeholder="例) niko-chan@kratos-example.com"
-        {{if .ValidationFieldError.Email}}
-        class="input input-bordered input-error"
-        {{else}}
-        class="input input-bordered"
-        {{end}}
-      >
-      {{if .ValidationFieldError.Email}}
-      <div class="text-sm text-red-700 my-2">{{.ValidationFieldError.Email}}</div>
-      {{end}}
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">氏名</span>
-      </div>
-      <div class="grid grid-cols-12">
-        <div class="container col-span-6">
-          <input 
-            id="lastname"
-            name="traits.lastname" 
-            value="{{.Traits.Lastname}}"
-            class="input input-bordered"
-          />
-          <div class="text-red-500 text-xs">{{.ValidationFieldError.Firstname}}</div>
-        </div>
-        <div class="container col-span-6">
-          <input 
-            id="firstname"
-            name="traits.firstname" 
-            value="{{.Traits.Firstname}}"
-            class="input input-bordered"
-          />
-          <div class="text-red-500 text-xs">{{.ValidationFieldError.Lastname}}</div>
-        </div>
-      </div>
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">ニックネーム</span>
-      </div>
-      <input 
-        id="nickname"
-        name="traits.nickname" 
-        value="{{.Traits.Nickname}}"
-        class="input input-bordered"
-      />
-      <div class="text-red-500 text-xs">{{.ValidationFieldError.Nickname}}</div>
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">生年月日</span>
-      </div>
-      <input 
-        id="birthdate"
-        name="traits.birthdate" 
-        type="date"
-        value="{{.Traits.Birthdate}}"
-        class="input input-bordered"
-      />
-      <div class="text-red-500 text-xs">{{.ValidationFieldError.Birthdate}}</div>
-    </label>
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "email" 
+      "name" "traits.email" 
+      "label" "メールアドレス" 
+      "value" .Traits.Email 
+      "placeholder" "john.doe@company.com" 
+      "validationErrorMessage" .ValidationFieldError.Email.Message 
+    }}
+  </div>
+  <div class="grid gap-6 mb-6 md:grid-cols-2">
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.lastname" 
+      "label" "性" 
+      "value" .Traits.Lastname 
+      "validationErrorMessage" .ValidationFieldError.Lastname.Message 
+    }}
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.firstname" 
+      "label" "名" 
+      "value" .Traits.Firstname 
+      "validationErrorMessage" .ValidationFieldError.Firstname.Message 
+    }}
+  </div>
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.nickname" 
+      "label" "ニックネーム" 
+      "value" .Traits.Nickname 
+      "validationErrorMessage" .ValidationFieldError.Nickname.Message 
+    }}
+  </div>
+  <div class="mb-6">
+    {{ template "components/_input_date.html" dict 
+      "type" "text" 
+      "name" "birthdate" 
+      "label" "生年月日" 
+      "year" .BirthdateYear
+      "month" .BirthdateMonth
+      "day" .BirthdateDay
+      "validationErrorMessage" .ValidationFieldError.Birthdate.Message 
+    }}
   </div>
 
+ 
   <div class="mx-auto text-center">
-    <button class="btn btn-primary btn-wide">送信</button>
+    <button 
+      type="submit" 
+      class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >送信</button>
   </div>
 
   {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}

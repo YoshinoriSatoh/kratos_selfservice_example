@@ -1,22 +1,6 @@
 {{define "auth/registration/_form_passkey.html"}}
-
+<div>
 <script>
-  function __oryWebAuthnBufferDecode(value) {
-    return Uint8Array.from(
-      atob(value.replaceAll("-", "+").replaceAll("_", "/")),
-      function (c) {
-        return c.charCodeAt(0)
-      },
-    )
-  }
-
-  function __oryWebAuthnBufferEncode(value) {
-    return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replaceAll("=", "")
-  }
-
   function passkeyRegistration() {
     const dataEl = document.getElementsByName("passkey_create_data")[0]
     const resultEl = document.getElementsByName("passkey_register")[0]
@@ -28,6 +12,7 @@
 
     const createData = JSON.parse(dataEl.value)
 
+    console.log("CCCCCCCCCCCCCCCCCCCc")
     // Fetch display name from field value
     const displayNameFieldName = createData.displayNameFieldName
     const displayName = dataEl
@@ -53,6 +38,8 @@
       )
     }
 
+    console.log("BBBBBBBBBBBBBBBBBBBB")
+
     navigator.credentials
       .create(opts)
       .then(function (credential) {
@@ -70,13 +57,14 @@
           },
         })
 
+        console.log("AAAAAAAAAAAAAAAAAAA")
+  
         htmx.trigger("#registration-form", "post_after_passkey_registration")
       })
       .catch((err) => {
         console.error(err)
       }) 
   }
-
 </script>
 
 <form 
@@ -103,81 +91,52 @@
     value="{{.PasskeyCreateData}}"
   />
 
-  <div class="mt-2 mb-4">
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text font-semibold">メールアドレス</span>
-      </div>
-      <input 
-        id="email"
-        name="traits.email" 
-        placeholder="例) niko-chan@kratos-example.com"
-        value="1@local.local"
-        {{if .ValidationFieldError.Email}}
-        class="input input-bordered input-error"
-        {{else}}
-        class="input input-bordered"
-        {{end}}
-      >
-      {{if .ValidationFieldError.Email}}
-      <div class="text-sm text-red-700 my-2">{{.ValidationFieldError.Email}}</div>
-      {{end}}
-    </label>
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "email" 
+      "name" "traits.email" 
+      "label" "メールアドレス" 
+      "value" .Traits.Email 
+      "placeholder" "john.doe@company.com" 
+      "validationErrorMessage" .ValidationFieldError.Email.Message 
+    }}
+  </div>
 
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">氏名</span>
-      </div>
-      <div class="grid grid-cols-12">
-        <div class="container col-span-6">
-          性
-          <input 
-            id="lastname"
-            name="traits.lastname" 
-            value="lastname"
-            class="input input-bordered"
-          />
-          <div class="text-red-500 text-xs">{{.ValidationFieldError.Firstname}}</div>
-        </div>
-        <div class="container col-span-6">
-          名 
-          <input 
-            id="firstname"
-            name="traits.firstname" 
-            value="firstname"
-            class="input input-bordered"
-          />
-          <div class="text-red-500 text-xs">{{.ValidationFieldError.Lastname}}</div>
-        </div>
-      </div>
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">ニックネーム</span>
-      </div>
-      <input 
-        id="nickname"
-        name="traits.nickname" 
-        value="firstname"
-        class="input input-bordered"
-      />
-      <div class="text-red-500 text-xs">{{.ValidationFieldError.Nickname}}</div>
-    </label>
-
-    <label class="form-control">
-      <div class="label">
-        <span class="label-text">生年月日</span>
-      </div>
-      <input 
-        id="birthdate"
-        name="traits.birthdate" 
-        type="date"
-        value="1900/10/11"
-        class="input input-bordered"
-      />
-      <div class="text-red-500 text-xs">{{.ValidationFieldError.Birthdate}}</div>
-    </label>
+  <div class="grid gap-6 mb-6 md:grid-cols-2">
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.lastname" 
+      "label" "性" 
+      "value" .Traits.Lastname 
+      "validationErrorMessage" .ValidationFieldError.Lastname.Message 
+    }}
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.firstname" 
+      "label" "名" 
+      "value" .Traits.Firstname 
+      "validationErrorMessage" .ValidationFieldError.Firstname.Message 
+    }}
+  </div>
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.nickname" 
+      "label" "ニックネーム" 
+      "value" .Traits.Nickname 
+      "validationErrorMessage" .ValidationFieldError.Nickname.Message 
+    }}
+  </div>
+  <div class="mb-6">
+    {{ template "components/_input_date.html" dict 
+      "type" "text" 
+      "name" "birthdate" 
+      "label" "生年月日" 
+      "year" .BirthdateYear
+      "month" .BirthdateMonth
+      "day" .BirthdateDay
+      "validationErrorMessage" .ValidationFieldError.Birthdate.Message 
+    }}
   </div>
 
   <div class="mx-auto text-center">
@@ -190,5 +149,6 @@
     </div>
   {{ end }}
 
-</form>
+  </form>
+</div>
 {{end}}

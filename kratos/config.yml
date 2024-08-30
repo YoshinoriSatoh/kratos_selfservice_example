@@ -65,6 +65,13 @@ selfservice:
               - email
               - profile
               - openid
+          - id: github 
+            provider: github 
+            client_id: Ov23liivaGP1z07pJQea 
+            client_secret: 87780635a250612cc195f4b2371527da2680fe79
+            mapper_url: file:///etc/config/kratos/data-mappers/github.jsonnet
+            scope:
+              - user:email
     # webauthn:
     #   enabled: true
     #   config:
@@ -73,15 +80,15 @@ selfservice:
     #       display_name: Ory Foundation
     #       id: localhost
     #       icon: https://www.ory.sh/an-icon.png
-    # passkey:
-    #   enabled: true
-    #   config:
-    #     rp:
-    #       display_name: "My Display Name"
-    #       id: localhost
-    #       origins:
-    #         - http://localhost:4433
-    #         - http://localhost:3000
+    passkey:
+      enabled: true
+      config:
+        rp:
+          display_name: "My Display Name"
+          id: localhost
+          origins:
+            - http://localhost:4433
+            - http://localhost:3000
   flows:
     registration:
       enabled: true
@@ -90,7 +97,7 @@ selfservice:
         oidc:
           hooks:
             - hook: session 
-          default_browser_return_url: http://localhost:3000/auth/registration
+          default_browser_return_url: http://localhost:3000/auth/registration/oidc
       enable_legacy_one_step: true
     verification:
       enabled: true
@@ -119,7 +126,8 @@ selfservice:
     logout:
       after:
         default_browser_return_url: http://localhost:3000/
-
+    error:
+      ui_url: http://localhost:3000/error
 session:
   cookie:
     name: "kratos_session"

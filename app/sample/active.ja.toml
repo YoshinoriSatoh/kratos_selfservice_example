@@ -16,6 +16,31 @@ other = """
         {{.Host}}/auth/verification
         """
 
+[ERR_LOGIN_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。お手数ですがログインを始めからやり直してください。\n\
+        {{.Host}}/auth/login
+        """
+
+[ERR_RECOVERY_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。お手数ですがパスワードリセットを始めからやり直してください。\n\
+        {{.Host}}/auth/recovery
+        """
+
+[ERR_SETTINGS_PASSWORD_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。お手数ですがパスワード再設定を始めからやり直してください。\n\
+        {{.Host}}/my/password
+        """
+
+[ERR_SETTINGS_PROFILE_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。お手数ですがプロフィール更新を始めからやり直してください。\n\
+        {{.Host}}/my/profile
+        """
+
+
 [ERR_KRATOS_SESSION_INACTIVE]
 other = "ERR_KRATOS_SESSION_INACTIVE"
 [ERR_KRATOS_SESSION_AAL2_REQUIRED]

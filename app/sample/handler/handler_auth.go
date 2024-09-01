@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
@@ -23,7 +22,7 @@ type getAuthRegistrationRequestParams struct {
 }
 
 // Extract parameters from http request
-func newgetAuthRegistrationRequestParams(r *http.Request) *getAuthRegistrationRequestParams {
+func newGetAuthRegistrationRequestParams(r *http.Request) *getAuthRegistrationRequestParams {
 	return &getAuthRegistrationRequestParams{
 		FlowID:              r.URL.Query().Get("flow"),
 		PasskeyRegistration: r.URL.Query().Get("passkey_registration") == "true",
@@ -65,7 +64,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := newgetAuthRegistrationRequestParams(r)
+	params := newGetAuthRegistrationRequestParams(r)
 
 	// prepare views
 	registrationIndexPasswordView := newView("auth/registration/index.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "password"})
@@ -188,106 +187,6 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// // --------------------------------------------------------------------------
-// // GET /auth/registration/passkey
-// // --------------------------------------------------------------------------
-// // Request parameters for handleGetAuthRegistrationPasskey
-// type getAuthRegistrationdPasskeyRequestParams struct {
-// 	FlowID string `validate:"omitempty,uuid4"`
-// }
-
-// // Extract parameters from http request
-// func newGetAuthRegistrationPasskeyRequestParams(r *http.Request) *getAuthRegistrationdPasskeyRequestParams {
-// 	return &getAuthRegistrationdPasskeyRequestParams{
-// 		FlowID: r.URL.Query().Get("flow"),
-// 	}
-// }
-
-// // Return parameters that can refer in view template
-// func (p *getAuthRegistrationdPasskeyRequestParams) toViewParams() map[string]any {
-// 	return map[string]any{
-// 		"RegistrationFlowID": p.FlowID,
-// 	}
-// }
-
-// // Validate request parameters and return viewError
-// // If you do not want Validation errors to be displayed near input fields,
-// // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-// func (p *getAuthRegistrationdPasskeyRequestParams) validate() *viewError {
-// 	viewError := newViewError().extract(pkgVars.validate.Struct(p))
-
-// 	for k := range viewError.validationFieldErrors {
-// 		if k == "FlowID" {
-// 			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-// 				MessageID: "ERR_FALLBACK",
-// 			})))
-// 			break
-// 		}
-// 	}
-
-// 	// Individual validations write here that cannot validate in common validations
-
-// 	return viewError
-// }
-
-// // GET /auth/registration/passkey
-// func (p *Provider) handleGetAuthRegistrationPasskey(w http.ResponseWriter, r *http.Request) {
-// 	ctx := r.Context()
-// 	session := getSession(ctx)
-
-// 	params := newGetAuthRegistrationPasskeyRequestParams(r)
-
-// 	// prepare views
-// 	registrationPasskeyView := newView("auth/registration/passkey.html").addParams(params.toViewParams())
-
-// 	// validate request parameters
-// 	if viewError := params.validate(); viewError.hasError() {
-// 		registrationPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
-// 		return
-// 	}
-
-// 	// base view error
-// 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-// 		MessageID: "ERR_REGISTRATION_DEFAULT",
-// 	}))
-
-// 	// create or get registration Flow
-// 	var (
-// 		err                  error
-// 		registrationFlow     kratos.RegistrationFlow
-// 		kratosResponseHeader kratos.KratosResponseHeader
-// 	)
-// 	if params.FlowID == "" {
-// 		var createRegistrationFlowResp kratos.CreateRegistrationFlowResponse
-// 		createRegistrationFlowResp, err = p.d.Kratos.CreateRegistrationFlow(ctx, kratos.CreateRegistrationFlowRequest{
-// 			Header: makeDefaultKratosRequestHeader(r),
-// 		})
-// 		kratosResponseHeader = createRegistrationFlowResp.Header
-// 		registrationFlow = createRegistrationFlowResp.RegistrationFlow
-// 	} else {
-// 		var getRegistrationFlowResp kratos.GetRegistrationFlowResponse
-// 		getRegistrationFlowResp, err = p.d.Kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
-// 			FlowID: params.FlowID,
-// 			Header: makeDefaultKratosRequestHeader(r),
-// 		})
-// 		kratosResponseHeader = getRegistrationFlowResp.Header
-// 		registrationFlow = getRegistrationFlowResp.RegistrationFlow
-// 	}
-// 	if err != nil {
-// 		registrationPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-// 		return
-// 	}
-
-// 	// render page
-// 	setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
-// 	registrationPasskeyView.addParams(map[string]any{
-// 		"RegistrationFlowID": registrationFlow.FlowID,
-// 		"CsrfToken":          registrationFlow.CsrfToken,
-// 		"Traits":             registrationFlow.Traits,
-// 		"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
-// 	}).render(w, r, session)
-// }
-
 // --------------------------------------------------------------------------
 // POST /auth/registration
 // --------------------------------------------------------------------------
@@ -319,18 +218,7 @@ func newPostAuthRegistrationRequestParams(r *http.Request) *postAuthRegistration
 
 // Return parameters that can refer in view template
 func (p *postAuthRegistrationRequestParams) toViewParams() map[string]any {
-	var (
-		year  string
-		month string
-		day   string
-	)
-	r := regexp.MustCompile(`(?P<Year>\d{4})-(?P<Month>\d{2})-(?P<Day>\d{2})`)
-	if r.Match([]byte(p.Traits.Birthdate)) {
-		caps := r.FindStringSubmatch(p.Traits.Birthdate)
-		year = caps[1]
-		month = caps[2]
-		day = caps[3]
-	}
+	year, month, day := parseDate(p.Traits.Birthdate)
 	return map[string]any{
 		"RegistrationFlowID":   p.FlowID,
 		"CsrfToken":            p.CsrfToken,
@@ -456,18 +344,7 @@ func newPostAuthRegistrationOidcRequestParams(r *http.Request) *postAuthRegistra
 
 // Return parameters that can refer in view template
 func (p *postAuthRegistrationOidcRequestParams) toViewParams() map[string]any {
-	var (
-		year  string
-		month string
-		day   string
-	)
-	r := regexp.MustCompile(`(?P<Year>\d{4})-(?P<Month>\d{2})-(?P<Day>\d{2})`)
-	if r.Match([]byte(p.Traits.Birthdate)) {
-		caps := r.FindStringSubmatch(p.Traits.Birthdate)
-		year = caps[1]
-		month = caps[2]
-		day = caps[3]
-	}
+	year, month, day := parseDate(p.Traits.Birthdate)
 	return map[string]any{
 		"RegistrationFlowID": p.FlowID,
 		"CsrfToken":          p.CsrfToken,
@@ -561,18 +438,7 @@ func newPostAuthRegistrationPasskeyRequestParams(r *http.Request) *postAuthRegis
 
 // Return parameters that can refer in view template
 func (p *postAuthRegistrationPasskeyRequestParams) toViewParams() map[string]any {
-	var (
-		year  string
-		month string
-		day   string
-	)
-	r := regexp.MustCompile(`(?P<Year>\d{4})-(?P<Month>\d{2})-(?P<Day>\d{2})`)
-	if r.Match([]byte(p.Traits.Birthdate)) {
-		caps := r.FindStringSubmatch(p.Traits.Birthdate)
-		year = caps[1]
-		month = caps[2]
-		day = caps[3]
-	}
+	year, month, day := parseDate(p.Traits.Birthdate)
 	return map[string]any{
 		"RegistrationFlowID": p.FlowID,
 		"CsrfToken":          p.CsrfToken,
@@ -935,7 +801,7 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_VERIFICATION_DEFAULT",
 	}))
 
 	// Verification Flow 更新
@@ -1028,7 +894,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_VERIFICATION_DEFAULT",
 	}))
 
 	// Verification Flow 更新
@@ -1130,7 +996,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
 
 	// create or get registration Flow
@@ -1254,7 +1120,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
 
 	// update login flow
@@ -1379,7 +1245,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
 
 	// update login flow
@@ -1479,7 +1345,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
 
 	// update login flow
@@ -1591,7 +1457,7 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_RECOVERY_DEFAULT",
 	}))
 
 	// create or get recovery Flow
@@ -1687,7 +1553,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_RECOVERY_DEFAULT",
 	}))
 
 	// update Recovery flow
@@ -1777,7 +1643,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
+		MessageID: "ERR_RECOVERY_DEFAULT",
 	}))
 
 	// Recovery Flow 更新

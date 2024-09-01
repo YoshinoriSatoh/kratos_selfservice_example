@@ -53,19 +53,25 @@ func Init(i InitInput) {
 }
 
 func loadTemplate() {
-	// funcMap := template.FuncMap{
-	// 	"htmlEscape": func(in string) string {
-	// 		out := template.HTMLEscapeString(in)
-	// 		fmt.Println(out)
-	// 		return out
-	// 	},
-	// 	"applyBrNewline": func(in string) string {
-	// 		out := strings.Replace(in, "\n", "<br>", -1)
-	// 		fmt.Println(out)
-	// 		return out
-	// 	},
-	// }
-	pkgVars.tmpl = template.Must(template.New("").Funcs(sprig.FuncMap()).ParseGlob("templates/**/*.html"))
+	funcMap := template.FuncMap{
+		// "htmlEscape": func(in string) string {
+		// 	out := template.HTMLEscapeString(in)
+		// 	fmt.Println(out)
+		// 	return out
+		// },
+		// "applyBrNewline": func(in string) string {
+		// 	out := strings.Replace(in, "\n", "<br>", -1)
+		// 	fmt.Println(out)
+		// 	return out
+		// },
+		"safehtml": func(text string) template.HTML {
+			return template.HTML(text)
+		},
+		"safeattr": func(text string) template.HTMLAttr {
+			return template.HTMLAttr(text)
+		},
+	}
+	pkgVars.tmpl = template.Must(template.New("").Funcs(sprig.FuncMap()).Funcs(funcMap).ParseGlob("templates/**/*.html"))
 	pkgVars.tmpl = template.Must(pkgVars.tmpl.ParseGlob("templates/**/**/*.html"))
 }
 

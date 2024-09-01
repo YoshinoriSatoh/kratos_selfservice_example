@@ -47,8 +47,6 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 
 	// Authentication Registration
 	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
-	// mux.Handle("GET /auth/registration/password_oidc", p.baseMiddleware(p.handleGetAuthRegistration))
-	// mux.Handle("GET /auth/registration/passkey", p.baseMiddleware(p.handleGetAuthRegistrationPasskey))
 	mux.Handle("POST /auth/registration", p.baseMiddleware(p.handlePostAuthRegistration))
 	mux.Handle("POST /auth/registration/oidc", p.baseMiddleware(p.handlePostAuthRegistrationOidc))
 	mux.Handle("POST /auth/registration/passkey", p.baseMiddleware(p.handlePostAuthRegistrationPasskey))
@@ -73,15 +71,13 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("POST /auth/recovery/email", p.baseMiddleware(p.handlePostAuthRecoveryEmail))
 	mux.Handle("POST /auth/recovery/code", p.baseMiddleware(p.handlePostAuthRecoveryCode))
 
-	// // My Password
-	// mux.Handle("GET /my/password", p.baseMiddleware(p.handleGetMyPassword))
-	// mux.Handle("POST /my/password", p.baseMiddleware(p.handlePostMyPassword))
+	// My Password
+	mux.Handle("GET /my/password", p.baseMiddleware(p.handleGetMyPassword))
+	mux.Handle("POST /my/password", p.baseMiddleware(p.handlePostMyPassword))
 
-	// // My Profile
-	// mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
-	// mux.Handle("GET /my/profile/edit", p.baseMiddleware(p.handleGetMyProfileEdit))
-	// mux.Handle("GET /my/profile/form", p.baseMiddleware(p.handleGetMyProfileForm))
-	// mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
+	// My Profile
+	mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
+	mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
 
 	// Top
 	mux.Handle("GET /", p.baseMiddleware(p.handleGetTop))

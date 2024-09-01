@@ -817,8 +817,6 @@ func (p *Provider) CreateRecoveryFlow(ctx context.Context, r CreateRecoveryFlowR
 		slog.ErrorContext(ctx, "CreateRecoveryFlow", "requestKratosPublic error", err)
 		return CreateRecoveryFlowResponse{}, err
 	}
-	fmt.Println("kratosResp.Header")
-	fmt.Println(kratosResp.Header)
 
 	// Parse response body
 	var kratosRespBody kratosCreateRecoveryFlowRespnseBody
@@ -826,8 +824,6 @@ func (p *Provider) CreateRecoveryFlow(ctx context.Context, r CreateRecoveryFlowR
 		slog.ErrorContext(ctx, "CreateRecoveryFlow", "json unmarshal error", err)
 		return CreateRecoveryFlowResponse{}, err
 	}
-	fmt.Println("kratosRespBody")
-	fmt.Println(kratosRespBody)
 
 	// create response
 	response := CreateRecoveryFlowResponse{
@@ -1032,8 +1028,8 @@ type UpdateSettingsFlowResponse struct {
 type UpdateSettingsFlowRequestBody struct {
 	Method    string `json:"method"`
 	CsrfToken string `json:"csrf_token"`
-	Password  string `json:"password"`
-	Traits    Traits `json:"traits"`
+	Password  string `json:"password,omitempty"`
+	Traits    Traits `json:"traits,omitempty"`
 }
 
 type kratosUpdateSettingsFlowRespnseBody struct {
@@ -1063,7 +1059,7 @@ func (p *Provider) UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowR
 	}
 	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
-		Path:      fmt.Sprintf("%s[?flow=%s", PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW, r.FlowID),
+		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW, r.FlowID),
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})

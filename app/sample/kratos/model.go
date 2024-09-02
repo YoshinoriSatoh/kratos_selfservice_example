@@ -230,6 +230,8 @@ func (e GenericError) Error() string {
 
 type ErrorGeneric struct {
 	Err GenericError `json:"error,omitempty"`
+	// APIドキュメントにはないが、update settingsで403返却時にredirect_browser_toが付与される
+	RedirectBrowserTo string `json:"redirect_browser_to,omitempty"`
 }
 
 func (e ErrorGeneric) Error() string {

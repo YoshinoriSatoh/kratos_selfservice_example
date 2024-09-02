@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"kratos_example/kratos"
@@ -201,13 +203,23 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 // GET /my/profile
 // --------------------------------------------------------------------------
 type getMyProfileRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
+	FlowID         string `validate:"omitempty,uuid4"`
+	SavedEmail     string
+	SavedFirstname string
+	SavedLastname  string
+	SavedNickname  string
+	SavedBirthdate string
 }
 
 // Extract parameters from http request
 func newGetMyProfileRequestParams(r *http.Request) *getMyProfileRequestParams {
 	return &getMyProfileRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
+		FlowID:         r.URL.Query().Get("flow"),
+		SavedEmail:     r.URL.Query().Get("email"),
+		SavedFirstname: r.URL.Query().Get("firstname"),
+		SavedLastname:  r.URL.Query().Get("lastname"),
+		SavedNickname:  r.URL.Query().Get("nickname"),
+		SavedBirthdate: r.URL.Query().Get("birthdate"),
 	}
 }
 
@@ -296,13 +308,30 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	// }
 	year, month, day := parseDate(session.Identity.Traits.Birthdate)
 	setCookie(w, kratosResponseHeader.Cookie)
+
+	email := session.Identity.Traits.Email
+	if params.SavedEmail != "" {
+		email = params.SavedEmail
+	}
+	firstname := session.Identity.Traits.Firstname
+	if params.SavedFirstname != "" {
+		firstname = params.SavedFirstname
+	}
+	lastname := session.Identity.Traits.Lastname
+	if params.SavedLastname != "" {
+		lastname = params.SavedLastname
+	}
+	nickname := session.Identity.Traits.Nickname
+	if params.SavedNickname != "" {
+		nickname = params.SavedNickname
+	}
 	myProfileIndexView.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
-		"Email":          session.Identity.Traits.Email,
-		"Firstname":      session.Identity.Traits.Firstname,
-		"Lastname":       session.Identity.Traits.Lastname,
-		"Nickname":       session.Identity.Traits.Nickname,
+		"Email":          email,
+		"Firstname":      firstname,
+		"Lastname":       lastname,
+		"Nickname":       nickname,
 		"BirthdateYear":  year,
 		"BirthdateMonth": month,
 		"BirthdateDay":   day,
@@ -317,9 +346,9 @@ type postMyProfileRequestPostForm struct {
 	FlowID    string `validate:"required,uuid4"`
 	CsrfToken string `validate:"required"`
 	Email     string `validate:"omitempty,email" ja:"メールアドレス"`
-	Firstname string `validate:"omitempty,min=5,max=20" ja:"氏名(性)"`
-	Lastname  string `validate:"omitempty,min=5,max=20" ja:"氏名(名)"`
-	Nickname  string `validate:"omitempty,min=5,max=20" ja:"ニックネーム"`
+	Firstname string `validate:"omitempty" ja:"氏名(性)"`
+	Lastname  string `validate:"omitempty" ja:"氏名(名)"`
+	Nickname  string `validate:"omitempty" ja:"ニックネーム"`
 	Birthdate string `validate:"omitempty,date" ja:"生年月日"`
 }
 
@@ -392,6 +421,8 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	// prepare views
 	myProfileFormView := newView("my/profile/_form.html").addParams(params.toViewParams())
+	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
+	verificationCodeView := newView("auth/verification/code.html").addParams(params.toViewParams())
 	topIndexView := newView("top/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
@@ -405,39 +436,11 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
 	}))
 
-	// deleteAfterLoginHook(w, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE)
-
-	// // セッションが privileged_session_max_age を過ぎていた場合、ログイン画面へリダイレクト（再ログインの強制）
-	// if session.NeedLoginWhenPrivilegedAccess() {
-	// 	err := saveAfterLoginHook(w, afterLoginHook{
-	// 		Operation: AFTER_LOGIN_HOOK_OPERATION_UPDATE_PROFILE,
-	// 		Params:    params,
-	// 	}, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE)
-	// 	if err != nil {
-	// 		tmplErr := pkgVars.tmpl.ExecuteTemplate(w, "my/profile/_form.html", viewParameters(session, r, map[string]any{
-	// 			"SettingsFlowID": reqParams.flowID,
-	// 			"CsrfToken":      reqParams.csrfToken,
-	// 			"ErrorMessages":  []string{"Error"},
-	// 			"Email":          params.Email,
-	// 			"Firstname":      params.Firstname,
-	// 			"Lastname":       params.Lastname,
-	// 			"Nickname":       params.Nickname,
-	// 			"Birthdate":      params.Birthdate,
-	// 		}))
-	// 		if tmplErr != nil {
-	// 			slog.ErrorContext(ctx, tmplErr.Error())
-	// 		}
-	// 	} else {
-	// 		returnTo := url.QueryEscape("/my/profile")
-	// 		slog.InfoContext(ctx, returnTo)
-	// 		redirect(w, r, fmt.Sprintf("/auth/login?return_to=%s", returnTo))
-	// 	}
-	// 	return
-	// }
-
+	// update settings flow
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 	kratosResp, err := p.d.Kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 		Body: kratos.UpdateSettingsFlowRequestBody{
 			CsrfToken: params.CsrfToken,
 			Method:    "profile",
@@ -445,10 +448,81 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
+		// render login form when session expired privileged_session_max_age, and re-render profile form.
+		// redirect not use. htmx implementation policy.
+		var errGeneric kratos.ErrorGeneric
+		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
+			// create login flow
+			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+			createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+				Header:  kratosRequestHeader,
+				Refresh: true,
+			})
+			if err != nil {
+				myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				return
+			}
+
+			// for re-render profile form
+			year, month, day := parseDate(params.Birthdate)
+			myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
+				"SettingsFlowID": params.FlowID,
+				"Information":    "ログインされました。プロフィールを更新できます。",
+				"CsrfToken":      params.CsrfToken,
+				"Email":          params.Email,
+				"Firstname":      params.Firstname,
+				"Lastname":       params.Lastname,
+				"Nickname":       params.Nickname,
+				"BirthdateYear":  year,
+				"BirthdateMonth": month,
+				"BirthdateDay":   day,
+			})
+
+			// render login form
+			setCookie(w, createLoginFlowResp.Header.Cookie)
+			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+			loginIndexView.addParams(map[string]any{
+				"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
+				"Information": "プロフィール更新のために再度ログインをお願いします。",
+				"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,
+				"Render":      myProfileIndexView.toQueryParam(),
+			}).render(w, r, session)
+			return
+		}
+
+		// render form with error
 		myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
+	if kratosResp.VerificationFlowID != "" {
+		// transition to verification flow from settings flow
+		// Transferring cookies from update registration flow response
+		kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+		// get verification flow
+		getVerificationFlowResp, err := p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+			FlowID: kratosResp.VerificationFlowID,
+			Header: kratosRequestHeader,
+		})
+		if err != nil {
+			slog.DebugContext(ctx, "get verification error", "err", err.Error())
+			myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+
+		// render verification code page (replace <body> tag and push url)
+		setCookie(w, getVerificationFlowResp.Header.Cookie)
+		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
+		verificationCodeView.addParams(map[string]any{
+			"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
+			"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
+			"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
+		}).render(w, r, session)
+		return
+	}
+
+	// render top page
 	setCookie(w, kratosResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	topIndexView.addParams(map[string]any{

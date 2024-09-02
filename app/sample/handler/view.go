@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"kratos_example/kratos"
@@ -16,30 +18,30 @@ import (
 
 // ---------------------- view ----------------------
 type view struct {
-	path   string
-	params map[string]any
+	Path   string         `json:"path"`
+	Params map[string]any `json:"params"`
 	viewError
 }
 
 func newView(path string) *view {
 	v := &view{
-		path:   path,
-		params: map[string]any{},
+		Path:   path,
+		Params: map[string]any{},
 	}
 	return v
 }
 
 func (v *view) render(w http.ResponseWriter, r *http.Request, session *kratos.Session) error {
-	v.params["CurrentPath"] = r.URL.Path
+	v.Params["CurrentPath"] = r.URL.Path
 
 	if session != nil {
-		v.params["IsAuthenticated"] = true
-		v.params["Navbar"] = session.Identity.Traits.ToMap()
+		v.Params["IsAuthenticated"] = true
+		v.Params["Navbar"] = session.Identity.Traits.ToMap()
 	} else {
-		v.params["IsAuthenticated"] = false
+		v.Params["IsAuthenticated"] = false
 	}
 
-	err := pkgVars.tmpl.ExecuteTemplate(w, v.path, v.params)
+	err := pkgVars.tmpl.ExecuteTemplate(w, v.Path, v.Params)
 	if err != nil {
 		slog.Error(err.Error())
 	}
@@ -47,8 +49,26 @@ func (v *view) render(w http.ResponseWriter, r *http.Request, session *kratos.Se
 }
 
 func (v *view) addParams(p map[string]any) *view {
-	maps.Copy(v.params, p)
+	maps.Copy(v.Params, p)
 	return v
+}
+
+func (v *view) toQueryParam() string {
+	jsonStr, err := json.Marshal(*v)
+	if err != nil {
+		slog.Error("json Marshal error in view", err)
+	}
+	return base64.URLEncoding.EncodeToString(jsonStr)
+}
+
+func viewFromQueryParam(base64str string) *view {
+	var v view
+	jsonStr, err := base64.URLEncoding.DecodeString(base64str)
+	if err != nil {
+		slog.Error("json Marshal error in view", err)
+	}
+	json.Unmarshal([]byte(jsonStr), &v)
+	return &v
 }
 
 func setCookie(w http.ResponseWriter, cookie []string) {
@@ -61,6 +81,22 @@ func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
 	w.Header().Set("HX-Push-Url", pushUrl)
 	w.Header().Set("HX-Retarget", "body")
 	w.Header().Set("HX-Reswap", "innerHTML")
+}
+
+func mergeProxyResponseCookies(reqCookie string, proxyResCookies []string) string {
+	reqCookies := strings.Split(reqCookie, " ")
+	for reqci, reqcv := range reqCookies {
+		reqcKey := strings.SplitN(reqcv, "=", 1)[0]
+		for _, prescv := range proxyResCookies {
+			prescKey := strings.SplitN(prescv, "=", 1)[0]
+			if prescKey == reqcKey {
+				reqCookies[reqci] = prescv
+				break
+			}
+		}
+	}
+
+	return strings.Join(reqCookies, " ")
 }
 
 // ---------------------- viewError ----------------------
@@ -263,8 +299,8 @@ func redirect(w http.ResponseWriter, r *http.Request, redirectTo string) {
 	if r.Header.Get("HX-Request") == "true" {
 		slog.Info("HX-Redirect")
 		w.Header().Set("HX-Redirect", redirectTo)
-		// w.Header().Set("HX-Location", redirectTo)
-		// w.WriteHeader(http.StatusSeeOther)
+		w.Header().Set("HX-Location", redirectTo)
+		w.WriteHeader(http.StatusSeeOther)
 	} else {
 		slog.Info("Redirect")
 		http.Redirect(w, r, redirectTo, http.StatusSeeOther)

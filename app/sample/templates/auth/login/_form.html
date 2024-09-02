@@ -1,7 +1,7 @@
 {{define "auth/login/_form.html"}}
 <form 
   id="login-form"
-  hx-post="/auth/login?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
+  hx-post="/auth/login?flow={{.LoginFlowID}}&render={{.Render}}" 
   hx-swap="outerHTML" 
   hx-target="this"
   >

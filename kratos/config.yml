@@ -112,8 +112,10 @@ selfservice:
       use: code 
     settings:
       ui_url: http://localhost:3000/my/password
-      privileged_session_max_age: 10m
+      privileged_session_max_age: 1m
       required_aal: aal1
+      # profile:
+      #   default_browser_return_url: http://localhost:3000/my/profile
     login:
       ui_url: http://localhost:3000/auth/login
       after:

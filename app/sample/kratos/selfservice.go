@@ -106,8 +106,9 @@ func (p *Provider) GetRegistrationFlow(ctx context.Context, r GetRegistrationFlo
 // Create Registration Flow
 // --------------------------------------------------------------------------
 type CreateRegistrationFlowRequest struct {
-	Header   KratosRequestHeader
-	ReturnTo string
+	Header KratosRequestHeader
+	// ReturnTo は application/json では機能しない
+	// https://github.com/ory/kratos/blob/v1.2.0/x/http_secure_redirect.go#L185-L199
 }
 
 type CreateRegistrationFlowResponse struct {
@@ -124,21 +125,15 @@ type kratosCreateRegisrationFlowRespnseBody struct {
 
 func (p *Provider) CreateRegistrationFlow(ctx context.Context, r CreateRegistrationFlowRequest) (CreateRegistrationFlowResponse, error) {
 	// Request to kratos
-	path := PATH_SELF_SERVICE_CREATE_REGISTRATION_FLOW
-	if r.ReturnTo != "" {
-		path = fmt.Sprintf("%s?return_to=%s", path, r.ReturnTo)
-	}
 	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   path,
+		Path:   PATH_SELF_SERVICE_CREATE_REGISTRATION_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "CreateRegistrationFlow", "requestKratosPublic error", err)
 		return CreateRegistrationFlowResponse{}, err
 	}
-	fmt.Println("kratosResp.Header")
-	fmt.Println(kratosResp.Header)
 
 	// Parse response body
 	var kratosRespBody kratosCreateRegisrationFlowRespnseBody
@@ -342,8 +337,9 @@ func (p *Provider) GetVerificationFlow(ctx context.Context, r GetVerificationFlo
 // Create Verification Flow
 // --------------------------------------------------------------------------
 type CreateVerificationFlowRequest struct {
-	Header   KratosRequestHeader
-	ReturnTo string
+	Header KratosRequestHeader
+	// ReturnTo は application/json では機能しない
+	// https://github.com/ory/kratos/blob/v1.2.0/x/http_secure_redirect.go#L185-L199
 }
 
 type CreateVerificationFlowResponse struct {
@@ -358,13 +354,9 @@ type kratosCreateVerificationFlowRespnseBody struct {
 
 func (p *Provider) CreateVerificationFlow(ctx context.Context, r CreateVerificationFlowRequest) (CreateVerificationFlowResponse, error) {
 	// Request to kratos
-	path := PATH_SELF_SERVICE_CREATE_VERIFICATION_FLOW
-	if r.ReturnTo != "" {
-		path = fmt.Sprintf("%s?return_to=%s", path, r.ReturnTo)
-	}
 	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   path,
+		Path:   PATH_SELF_SERVICE_CREATE_VERIFICATION_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
@@ -528,9 +520,10 @@ func (p *Provider) GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (Get
 // Create Login Flow
 // --------------------------------------------------------------------------
 type CreateLoginFlowRequest struct {
-	Header   KratosRequestHeader
-	Refresh  bool
-	ReturnTo string
+	Header  KratosRequestHeader
+	Refresh bool
+	// ReturnTo は application/json では機能しない
+	// https://github.com/ory/kratos/blob/v1.2.0/x/http_secure_redirect.go#L185-L199
 }
 
 type CreateLoginFlowResponse struct {
@@ -546,12 +539,10 @@ type kratosCreateLoginFlowRespnseBody struct {
 func (p *Provider) CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLoginFlowResponse, error) {
 	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_LOGIN_FLOW
-	if r.ReturnTo != "" {
-		path = fmt.Sprintf("%s?return_to=%s", path, r.ReturnTo)
-	}
 	if r.Refresh {
 		path = fmt.Sprintf("%s?refresh=true", path)
 	}
+
 	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   path,
@@ -1020,9 +1011,10 @@ type UpdateSettingsFlowRequest struct {
 }
 
 type UpdateSettingsFlowResponse struct {
-	Header            KratosResponseHeader
-	SettingsFlowID    string
-	RedirectBrowserTo string
+	Header             KratosResponseHeader
+	SettingsFlowID     string
+	VerificationFlowID string
+	RedirectBrowserTo  string
 }
 
 type UpdateSettingsFlowRequestBody struct {
@@ -1063,13 +1055,15 @@ func (p *Provider) UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowR
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
-	var redirectBrowserTo string
+	response := UpdateSettingsFlowResponse{
+		Header: kratosResp.Header,
+	}
 	if err != nil {
 		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
-			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
+			response.RedirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else {
 			slog.ErrorContext(ctx, "UpdateSettingsFlow", "requestKratosPublic error", err)
-			return UpdateSettingsFlowResponse{}, err
+			return response, err
 		}
 	}
 
@@ -1077,15 +1071,14 @@ func (p *Provider) UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowR
 	var kratosRespBody kratosUpdateSettingsFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "json unmarshal error", err)
-		return UpdateSettingsFlowResponse{}, err
+		return response, err
 	}
 
 	// Create response
-	response := UpdateSettingsFlowResponse{
-		Header:            kratosResp.Header,
-		RedirectBrowserTo: redirectBrowserTo,
-	}
 	for _, c := range kratosRespBody.ContinueWith {
+		if c.Action == "show_verification_ui" {
+			response.VerificationFlowID = c.Flow.ID
+		}
 		if c.Action == "show_settings_ui" {
 			response.SettingsFlowID = c.Flow.ID
 		}

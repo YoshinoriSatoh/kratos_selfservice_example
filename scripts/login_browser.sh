@@ -10,7 +10,7 @@ fi
 
 password=$2
 if [ -z "$password" ]; then
-  password=overwatch2023
+  password=overwatch2024!@
 fi
 
 publicEndpoint=http://localhost:4433

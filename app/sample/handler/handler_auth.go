@@ -5,8 +5,6 @@ import (
 	"kratos_example/kratos"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
@@ -149,7 +147,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 		if len(identities) == 1 {
 			// Transferring cookies from create or get registration flow response
 			kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-			kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
+			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResponseHeader.Cookie)
 
 			// update Registration Flow
 			kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
@@ -293,7 +291,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	// transition to verification flow from registration flow
 	// Transferring cookies from update registration flow response
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = strings.Join(updateRegistrationFlowResp.Header.Cookie, " ")
+	kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateRegistrationFlowResp.Header.Cookie)
 	// get verification flow
 	getVerificationFlowResp, err := p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 		FlowID: updateRegistrationFlowResp.VerificationFlowID,
@@ -497,7 +495,6 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 		registrationFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	fmt.Println(kratosResp.RedirectBrowserTo)
 
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
@@ -520,7 +517,7 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 
 	// Transferring cookies from update registration flow response
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = strings.Join(kratosResp.Header.Cookie, " ")
+	kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 	// create login flow
 	createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header: kratosRequestHeader,
@@ -914,7 +911,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 
 	// Transferring cookies from update registration flow response
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = strings.Join(updateVerificationFlowResp.Header.Cookie, " ")
+	kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateVerificationFlowResp.Header.Cookie)
 	// create login flow
 	createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header: kratosRequestHeader,
@@ -941,14 +938,14 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 // Request parameters for handleGetAuthLogin
 type getAuthLoginRequestParams struct {
 	FlowID   string `validate:"omitempty,uuid4"`
-	ReturnTo string
+	ReturnTo string `validate:"omitempty"`
 }
 
 // Extract parameters from http request
 func newGetAuthLoginRequestParams(r *http.Request) *getAuthLoginRequestParams {
 	return &getAuthLoginRequestParams{
 		FlowID:   r.URL.Query().Get("flow"),
-		ReturnTo: url.QueryEscape(r.URL.Query().Get("return_to")),
+		ReturnTo: r.URL.Query().Get("return_to"),
 	}
 }
 
@@ -956,6 +953,7 @@ func newGetAuthLoginRequestParams(r *http.Request) *getAuthLoginRequestParams {
 func (p *getAuthLoginRequestParams) toViewParams() map[string]any {
 	return map[string]any{
 		"LoginFlowID": p.FlowID,
+		"ReturnTo":    p.ReturnTo,
 	}
 }
 
@@ -1049,7 +1047,6 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, kratosResponseHeader.Cookie)
 	loginIndexView.addParams(map[string]any{
 		"LoginFlowID":      loginFlow.FlowID,
-		"ReturnTo":         params.ReturnTo,
 		"Information":      information,
 		"CsrfToken":        loginFlow.CsrfToken,
 		"Traits":           traits,
@@ -1068,12 +1065,14 @@ type postAuthLoginRequestParams struct {
 	CsrfToken  string `validate:"required"`
 	Identifier string `validate:"required,email" ja:"メールアドレス"`
 	Password   string `validate:"required" ja:"パスワード"`
+	Render     string
 }
 
 // Extract parameters from http request
 func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginRequestParams {
 	return &postAuthLoginRequestParams{
 		FlowID:     r.URL.Query().Get("flow"),
+		Render:     r.URL.Query().Get("render"),
 		CsrfToken:  r.PostFormValue("csrf_token"),
 		Identifier: r.PostFormValue("identifier"),
 		Password:   r.PostFormValue("password"),
@@ -1169,16 +1168,12 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// 	}
 	// }
 
-	// // return_to 指定時はreturn_toへリダイレクト
-	// returnTo := r.URL.Query().Get("return_to")
-	// slog.Info(returnTo)
-	// var redirectTo string
-	// if returnTo != "" {
-	// 	redirectTo = returnTo
-	// } else {
-	// 	redirectTo = "/"
-	// }
-	// redirect(w, r, redirectTo)
+	if params.Render != "" {
+		v := viewFromQueryParam(params.Render)
+		setHeadersForReplaceBody(w, v.Path)
+		viewFromQueryParam(params.Render).render(w, r, session)
+		return
+	}
 
 	setCookie(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
@@ -1319,7 +1314,6 @@ func (p *postAuthLoginPasskeyRequestParams) toViewParams() map[string]any {
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
 func (params *postAuthLoginPasskeyRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
-	fmt.Println(viewError)
 
 	// Individual validations write here that cannot validate in common validations
 

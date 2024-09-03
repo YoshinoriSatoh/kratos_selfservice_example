@@ -156,9 +156,6 @@ func (ve *viewError) extract(err error) *viewError {
 				Tag:     err.ActualTag(),
 				Message: msg,
 			}
-			// if err.StructField() == "CsrfToken" || err.StructField() == "FlowID" {
-			// 	errorMessages = []string{"申し訳ございませんが、画面をリロードして再度お試しください。"}
-			// }
 		}
 		return &viewError{
 			validationFieldErrors: fieldsErrors,

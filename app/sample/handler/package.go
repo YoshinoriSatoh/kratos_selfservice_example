@@ -54,16 +54,6 @@ func Init(i InitInput) {
 
 func loadTemplate() {
 	funcMap := template.FuncMap{
-		// "htmlEscape": func(in string) string {
-		// 	out := template.HTMLEscapeString(in)
-		// 	fmt.Println(out)
-		// 	return out
-		// },
-		// "applyBrNewline": func(in string) string {
-		// 	out := strings.Replace(in, "\n", "<br>", -1)
-		// 	fmt.Println(out)
-		// 	return out
-		// },
 		"safehtml": func(text string) template.HTML {
 			return template.HTML(text)
 		},

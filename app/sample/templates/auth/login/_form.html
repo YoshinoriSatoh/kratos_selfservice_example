@@ -15,7 +15,11 @@
     type="hidden"
     value="{{.Render}}"
   />
-
+  <input
+    name="hook"
+    type="hidden"
+    value="{{.Hook}}"
+  />
   <div class="mb-6">
     {{ template "components/_input.html" dict 
       "type" "email" 

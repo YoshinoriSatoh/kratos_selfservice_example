@@ -478,6 +478,15 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				"BirthdateDay":   day,
 			})
 
+			hook := &hook{
+				HookID: HookIDUpdateSettingsProfile,
+				UpdateSettingsProfileParams: HookParamsUpdateSettingsProfile{
+					FlowID:    params.FlowID,
+					CsrfToken: params.CsrfToken,
+					Traits:    makeTraitsForUpdateSettings(session, params),
+				},
+			}
+
 			// render login form
 			setCookie(w, createLoginFlowResp.Header.Cookie)
 			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
@@ -486,6 +495,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				"Information": "プロフィール更新のために再度ログインをお願いします。",
 				"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,
 				"Render":      myProfileIndexView.toQueryParam(),
+				"Hook":        hook.toQueryParam(),
 			}).render(w, r, session)
 			return
 		}

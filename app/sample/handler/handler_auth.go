@@ -1078,6 +1078,7 @@ type postAuthLoginRequestParams struct {
 	Identifier string `validate:"required,email" ja:"メールアドレス"`
 	Password   string `validate:"required" ja:"パスワード"`
 	Render     string
+	Hook       string
 }
 
 // Extract parameters from http request
@@ -1085,6 +1086,7 @@ func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginRequestParams 
 	return &postAuthLoginRequestParams{
 		FlowID:     r.URL.Query().Get("flow"),
 		Render:     r.PostFormValue("render"),
+		Hook:       r.PostFormValue("hook"),
 		CsrfToken:  r.PostFormValue("csrf_token"),
 		Identifier: r.PostFormValue("identifier"),
 		Password:   r.PostFormValue("password"),
@@ -1096,6 +1098,7 @@ func (p *postAuthLoginRequestParams) toViewParams() map[string]any {
 	return map[string]any{
 		"LoginFlowID": p.FlowID,
 		"Render":      p.Render,
+		"Hook":        p.Hook,
 		"CsrfToken":   p.CsrfToken,
 		"Identifier":  p.Identifier,
 		"Password":    p.Password,
@@ -1154,32 +1157,107 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// update session
 	session = &updateLoginFlowResp.Session
 
-	// update session
-	// kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	// kratosRequestHeader.Cookie = updateLoginFlowResp.Header.Cookie
-	// whoamiResp, _ := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
-	// 	Header: kratosRequestHeader,
-	// })
+	if params.Hook != "" {
+		h := hookFromQueryParam(params.Hook)
+		if h.HookID == HookIDUpdateSettingsProfile {
+			kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateLoginFlowResp.Header.Cookie)
+			kratosResp, err := p.d.Kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+				FlowID: h.UpdateSettingsProfileParams.FlowID,
+				Header: kratosRequestHeader,
+				Body: kratos.UpdateSettingsFlowRequestBody{
+					CsrfToken: params.CsrfToken,
+					Method:    "profile",
+					Traits:    h.UpdateSettingsProfileParams.Traits,
+				},
+			})
+			if err != nil {
+				loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				return
+			}
+			if kratosResp.VerificationFlowID != "" {
+				// transition to verification flow from settings flow
+				// Transferring cookies from update registration flow response
+				kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+				kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+				// get verification flow
+				getVerificationFlowResp, err := p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+					FlowID: kratosResp.VerificationFlowID,
+					Header: kratosRequestHeader,
+				})
+				if err != nil {
+					slog.DebugContext(ctx, "get verification error", "err", err.Error())
+					loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
 
-	// // ログインフック実行
-	// hook, err := loadAfterLoginHook(r, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE)
-	// if err != nil {
-	// 	slog.Error(err.Error())
-	// 	return
-	// }
-	// if hook.Operation == AFTER_LOGIN_HOOK_OPERATION_UPDATE_PROFILE {
-	// 	hookParams, _ := hook.Params.(map[string]interface{})
-	// 	err := p.updateProfile(w, r, updateProfileParams{
-	// 		FlowID:    hookParams["flow_id"].(string),
-	// 		Email:     hookParams["email"].(string),
-	// 		Nickname:  hookParams["nickname"].(string),
-	// 		Birthdate: hookParams["birthdate"].(string),
-	// 	})
-	// 	if err != nil {
-	// 		slog.Error(err.Error())
-	// 		return
-	// 	}
-	// }
+				whoamiResp, _ := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
+					Header: kratosRequestHeader,
+				})
+
+				createSettingsFlowResp, err := p.d.Kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+					Header: makeDefaultKratosRequestHeader(r),
+				})
+				if err != nil {
+					loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				// for re-render profile form
+				year, month, day := parseDate(h.UpdateSettingsProfileParams.Traits.Birthdate)
+				myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
+					"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
+					"Information":    "プロフィールが更新されました。",
+					"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
+					"Email":          whoamiResp.Session.Identity.Traits.Email,
+					"Firstname":      whoamiResp.Session.Identity.Traits.Firstname,
+					"Lastname":       whoamiResp.Session.Identity.Traits.Lastname,
+					"Nickname":       whoamiResp.Session.Identity.Traits.Nickname,
+					"BirthdateYear":  year,
+					"BirthdateMonth": month,
+					"BirthdateDay":   day,
+				})
+
+				// render verification code page (replace <body> tag and push url)
+				setCookie(w, getVerificationFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
+				newView("auth/verification/code.html").addParams(params.toViewParams()).addParams(map[string]any{
+					"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
+					"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
+					"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
+					"Render":             myProfileIndexView.toQueryParam(),
+				}).render(w, r, session)
+				return
+			}
+			whoamiResp, _ := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
+				Header: kratosRequestHeader,
+			})
+
+			createSettingsFlowResp, err := p.d.Kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+				Header: makeDefaultKratosRequestHeader(r),
+			})
+			if err != nil {
+				loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				return
+			}
+			year, month, day := parseDate(h.UpdateSettingsProfileParams.Traits.Birthdate)
+			setCookie(w, updateLoginFlowResp.Header.Cookie)
+			setHeadersForReplaceBody(w, "/my/profile")
+			newView("my/profile/index.html").addParams(map[string]any{
+				"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
+				"Information":    "プロフィールが更新されました。",
+				"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
+				"Email":          whoamiResp.Session.Identity.Traits.Email,
+				"Firstname":      whoamiResp.Session.Identity.Traits.Firstname,
+				"Lastname":       whoamiResp.Session.Identity.Traits.Lastname,
+				"Nickname":       whoamiResp.Session.Identity.Traits.Nickname,
+				"BirthdateYear":  year,
+				"BirthdateMonth": month,
+				"BirthdateDay":   day,
+			}).render(w, r, whoamiResp.Session)
+		}
+		return
+	}
 
 	if params.Render != "" {
 		v := viewFromQueryParam(params.Render)

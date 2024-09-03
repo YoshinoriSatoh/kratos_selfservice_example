@@ -12,7 +12,6 @@
 
     const createData = JSON.parse(dataEl.value)
 
-    console.log("CCCCCCCCCCCCCCCCCCCc")
     // Fetch display name from field value
     const displayNameFieldName = createData.displayNameFieldName
     const displayName = dataEl
@@ -38,8 +37,6 @@
       )
     }
 
-    console.log("BBBBBBBBBBBBBBBBBBBB")
-
     navigator.credentials
       .create(opts)
       .then(function (credential) {
@@ -57,8 +54,6 @@
           },
         })
 
-        console.log("AAAAAAAAAAAAAAAAAAA")
-  
         htmx.trigger("#registration-form", "post_after_passkey_registration")
       })
       .catch((err) => {

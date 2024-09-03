@@ -511,6 +511,33 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		whoamiResp, _ := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
+			Header: kratosRequestHeader,
+		})
+
+		createSettingsFlowResp, err := p.d.Kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		if err != nil {
+			myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+
+		// for re-render profile form
+		year, month, day := parseDate(params.Birthdate)
+		myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
+			"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
+			"Information":    "プロフィールが更新されました。",
+			"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
+			"Email":          whoamiResp.Session.Identity.Traits.Email,
+			"Firstname":      whoamiResp.Session.Identity.Traits.Firstname,
+			"Lastname":       whoamiResp.Session.Identity.Traits.Lastname,
+			"Nickname":       whoamiResp.Session.Identity.Traits.Nickname,
+			"BirthdateYear":  year,
+			"BirthdateMonth": month,
+			"BirthdateDay":   day,
+		})
+
 		// render verification code page (replace <body> tag and push url)
 		setCookie(w, getVerificationFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
@@ -518,6 +545,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
 			"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
 			"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
+			"Render":             myProfileIndexView.toQueryParam(),
 		}).render(w, r, session)
 		return
 	}

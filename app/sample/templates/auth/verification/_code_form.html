@@ -10,7 +10,11 @@
     type="hidden"
     value="{{.CsrfToken}}"
   />
-
+  <input
+    name="render"
+    type="hidden"
+    value="{{.Render}}"
+  />
   <div class="my-6 text-center">
     <div class="mb-6">
       {{ template "components/_input.html" dict 

@@ -1,7 +1,7 @@
 {{define "auth/login/_form.html"}}
 <form 
   id="login-form"
-  hx-post="/auth/login?flow={{.LoginFlowID}}&render={{.Render}}" 
+  hx-post="/auth/login?flow={{.LoginFlowID}}" 
   hx-swap="outerHTML" 
   hx-target="this"
   >
@@ -10,17 +10,11 @@
     type="hidden"
     value="{{.CsrfToken}}"
   />
-
-  <!-- <input
-    name="passkey_challenge"
-    type="hidden"
-    value="{{.PasskeyChallenge}}"
-  />
-
   <input
-    name="passkey_login"
+    name="render"
     type="hidden"
-  /> -->
+    value="{{.Render}}"
+  />
 
   <div class="mb-6">
     {{ template "components/_input.html" dict 

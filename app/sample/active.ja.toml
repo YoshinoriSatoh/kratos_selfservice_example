@@ -69,7 +69,8 @@ other = "{{.reason}}"
 other = "{{.property}}のプロパティが見つかりません。"
 [ERR_KRATOS_UI_4000003]
 other = "長さが{{.min_length}}ですが、{{.actual_length}}である必要があります。"
-
+[ERR_KRATOS_UI_4000006]
+other = "メールアドレスもしくはパスワードが間違っています。"
 [ERR_KRATOS_UI_4000007]
 other = "既に登録済みのメールアドレスです。"
 [ERR_KRATOS_UI_4000015]

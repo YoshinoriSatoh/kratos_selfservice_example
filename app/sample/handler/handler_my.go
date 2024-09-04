@@ -104,7 +104,7 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// render page
-	setCookie(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosResponseHeader.Cookie)
 	myPasswordIndexView.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
@@ -193,7 +193,7 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	setCookie(w, kratosResp.Header.Cookie)
+	addCookies(w, kratosResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	topIndexView.addParams(map[string]any{
 		"Items": items,
@@ -308,7 +308,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	// 	deleteAfterLoginHook(w, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE)
 	// }
 	year, month, day := parseDate(session.Identity.Traits.Birthdate)
-	setCookie(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosResponseHeader.Cookie)
 
 	email := session.Identity.Traits.Email
 	if params.SavedEmail != "" {
@@ -490,7 +490,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// render login form
-			setCookie(w, createLoginFlowResp.Header.Cookie)
+			addCookies(w, createLoginFlowResp.Header.Cookie)
 			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
 			loginIndexView.addParams(map[string]any{
 				"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
@@ -509,8 +509,9 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	if kratosResp.VerificationFlowID != "" {
 		// transition to verification flow from settings flow
-		kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+		// kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+		slog.DebugContext(ctx, "handlePostMyProfile", "kratosRequestHeader.Cookie", kratosRequestHeader.Cookie)
 		// get verification flow
 		getVerificationFlowResp, err := p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			FlowID: kratosResp.VerificationFlowID,
@@ -550,7 +551,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// render verification code page (replace <body> tag and push url)
-		setCookie(w, getVerificationFlowResp.Header.Cookie)
+		addCookies(w, getVerificationFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
 		verificationCodeView.addParams(map[string]any{
 			"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
@@ -562,7 +563,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// render top page
-	setCookie(w, kratosResp.Header.Cookie)
+	addCookies(w, kratosResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	topIndexView.addParams(map[string]any{
 		"Items": items,

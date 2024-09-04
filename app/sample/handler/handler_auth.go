@@ -111,7 +111,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	if registrationFlow.CredentialType == kratos.CredentialsTypePassword {
 
 		// render page
-		setCookie(w, kratosResponseHeader.Cookie)
+		addCookies(w, kratosResponseHeader.Cookie)
 		setHeadersForReplaceBody(w, "/auth/registration")
 
 		if params.PasskeyRegistration {
@@ -167,7 +167,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 				registrationIndexOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 				return
 			}
-			setCookie(w, kratosResp.Header.Cookie)
+			addCookies(w, kratosResp.Header.Cookie)
 			if kratosResp.RedirectBrowserTo != "" {
 				// w.Header().Set("HX-Redirect", kratosResp.RedirectBrowserTo)
 				redirect(w, r, kratosResp.RedirectBrowserTo)
@@ -175,7 +175,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 		}
 
 		// render page
-		setCookie(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
+		addCookies(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
 		registrationIndexOidcView.addParams(map[string]any{
 			"RegistrationFlowID": registrationFlow.FlowID,
 			"CsrfToken":          registrationFlow.CsrfToken,
@@ -307,7 +307,7 @@ func (p *Provider) handlePostAuthRegistration(w http.ResponseWriter, r *http.Req
 	}
 
 	// render verification code page (replace <body> tag and push url)
-	setCookie(w, getVerificationFlowResp.Header.Cookie)
+	addCookies(w, getVerificationFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
 	verificationCodeView.addParams(map[string]any{
 		"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
@@ -404,7 +404,7 @@ func (p *Provider) handlePostAuthRegistrationOidc(w http.ResponseWriter, r *http
 		return
 	}
 
-	setCookie(w, kratosResp.Header.Cookie)
+	addCookies(w, kratosResp.Header.Cookie)
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
 	}
@@ -530,7 +530,7 @@ func (p *Provider) handlePostAuthRegistrationPasskey(w http.ResponseWriter, r *h
 		registrationFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	setCookie(w, kratosResp.Header.Cookie)
+	addCookies(w, kratosResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
 	loginIndexView.addParams(map[string]any{
 		"LoginFlowID":      createLoginFlowResp.LoginFlow.FlowID,
@@ -637,7 +637,7 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	}
 
 	// render page
-	setCookie(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosResponseHeader.Cookie)
 	verificationIndexView.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
@@ -736,7 +736,7 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	}
 
 	// render page
-	setCookie(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosResponseHeader.Cookie)
 	verificationCodeView.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
@@ -819,7 +819,7 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	}
 
 	// render page
-	setCookie(w, updateVerificationFlowResp.Header.Cookie)
+	addCookies(w, updateVerificationFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", params.FlowID))
 	verificationCodeView.addParams(map[string]any{
 		"VerificationFlowID": updateVerificationFlowResp.Flow.FlowID,
@@ -938,7 +938,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	}
 
 	// render page
-	setCookie(w, createLoginFlowResp.Header.Cookie)
+	addCookies(w, createLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
 	loginIndexView.addParams(map[string]any{
 		"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
@@ -1061,7 +1061,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// 	information = "プロフィール更新のために、再度ログインをお願いします。"
 	// }
 
-	setCookie(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosResponseHeader.Cookie)
 	loginIndexView.addParams(map[string]any{
 		"LoginFlowID":        loginFlow.FlowID,
 		"Information":        information,
@@ -1227,7 +1227,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				})
 
 				// render verification code page (replace <body> tag and push url)
-				setCookie(w, getVerificationFlowResp.Header.Cookie)
+				addCookies(w, getVerificationFlowResp.Header.Cookie)
 				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
 				newView("auth/verification/code.html").addParams(params.toViewParams()).addParams(map[string]any{
 					"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
@@ -1249,7 +1249,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			year, month, day := parseDate(h.UpdateSettingsProfileParams.Traits.Birthdate)
-			setCookie(w, updateLoginFlowResp.Header.Cookie)
+			addCookies(w, updateLoginFlowResp.Header.Cookie)
 			setHeadersForReplaceBody(w, "/my/profile")
 			newView("my/profile/index.html").addParams(map[string]any{
 				"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
@@ -1274,7 +1274,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCookie(w, updateLoginFlowResp.Header.Cookie)
+	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	topIndexView.addParams(map[string]any{
 		"Items": items,
@@ -1359,7 +1359,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 
 	// update session
 	session = &updateLoginFlowResp.Session
-	setCookie(w, updateLoginFlowResp.Header.Cookie)
+	addCookies(w, updateLoginFlowResp.Header.Cookie)
 
 	if updateLoginFlowResp.RedirectBrowserTo != "" {
 		// w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
@@ -1460,7 +1460,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 	// update session
 	session = &updateLoginFlowResp.Session
 
-	setCookie(w, updateLoginFlowResp.Header.Cookie)
+	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	topIndexView.addParams(map[string]any{
 		"Items": items,
@@ -1487,7 +1487,7 @@ func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// change location
-	setCookie(w, updateLogoutFlowResp.Header.Cookie)
+	addCookies(w, updateLogoutFlowResp.Header.Cookie)
 	w.Header().Set("HX-Location", "/")
 }
 
@@ -1581,7 +1581,7 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	}
 
 	// render page
-	setCookie(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosResponseHeader.Cookie)
 	recoveryIndexView.addParams(map[string]any{
 		"RecoveryFlowID": recoveryFlow.FlowID,
 		"CsrfToken":      recoveryFlow.CsrfToken,
@@ -1663,7 +1663,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 		recoveryEmailFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	setCookie(w, kratosResp.Header.Cookie)
+	addCookies(w, kratosResp.Header.Cookie)
 
 	if kratosResp.RedirectBrowserTo != "" {
 		redirect(w, r, kratosResp.RedirectBrowserTo)
@@ -1756,52 +1756,11 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	setCookie(w, kratosResp.Header.Cookie)
-	// kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
-	// kratosRequestHeader.Cookie = strings.Join(kratosResp.Header.Cookie, " ")
-	slog.Debug("mergeProxyResponseCookies", "kratosResp.Header.Cookie", kratosResp.Header.Cookie)
+	addCookies(w, kratosResp.Header.Cookie)
 	if kratosResp.RedirectBrowserTo != "" {
 		arr := strings.Split(kratosResp.RedirectBrowserTo, "=")
 		settingsFlowID := arr[1]
-
-		var cookies []string
-		var hasCsrfToken bool
-		for _, respcv := range kratosResp.Header.Cookie {
-			slog.Debug("mergeProxyResponseCookies", "respcv", respcv)
-			v := strings.Split(respcv, ";")[0]
-			cookies = append(cookies, v)
-			// if strings.HasPrefix(respcv, "kratos_session") {
-			// 	cookies = append(cookies, v)
-			// }
-			if strings.HasPrefix(respcv, "csrf_token") {
-				hasCsrfToken = true
-				// cookies = append(cookies, v)
-			}
-			// 	v := strings.Split(respcv, ";")[0]
-			// 	cookies = append(cookies, v)
-			// }
-		}
-		// for _, cv := range cookies {
-		// 	if strings.HasPrefix(cv, "csrf_token") {
-		// 		break
-		// 	}
-		// 	for _, reqcv := range strings.Split(kratosRequestHeader.Cookie, " ") {
-		// 		if strings.HasPrefix(reqcv, "csrf_token") {
-		// 			cookies = append(cookies, reqcv)
-		// 		}
-		// 	}
-		// }
-
-		if !hasCsrfToken {
-			for _, reqcv := range r.Header["Cookie"] {
-				if strings.HasPrefix(reqcv, "csrf_token") {
-					cookies = append(cookies, reqcv)
-				}
-			}
-		}
-
-		slog.DebugContext(ctx, "handlePostAuthRecoveryCode", "cookies", cookies)
-		kratosRequestHeader.Cookie = strings.Join(cookies, "; ")
+		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 
 		getSettingsFlowResp, err := p.d.Kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
 			FlowID: settingsFlowID,
@@ -1811,7 +1770,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 			recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
-		setCookie(w, getSettingsFlowResp.Header.Cookie)
+		addCookies(w, getSettingsFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", settingsFlowID))
 		myPasswordIndexView.addParams(map[string]any{
 			"SettingsFlowID": settingsFlowID,

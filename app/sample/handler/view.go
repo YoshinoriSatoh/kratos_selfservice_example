@@ -71,7 +71,7 @@ func viewFromQueryParam(base64str string) *view {
 	return &v
 }
 
-func setCookie(w http.ResponseWriter, cookie []string) {
+func addCookies(w http.ResponseWriter, cookie []string) {
 	for _, v := range cookie {
 		w.Header().Add("Set-Cookie", v)
 	}
@@ -83,27 +83,32 @@ func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
 	w.Header().Set("HX-Reswap", "innerHTML")
 }
 
-func mergeProxyResponseCookies(reqCookie string, proxyResCookies []string) string {
-	reqCookies := strings.Split(reqCookie, " ")
-	slog.Debug("mergeProxyResponseCookies", "reqCookies", reqCookies)
-	// for reqci, reqcv := range reqCookies {
-	// 	slog.Debug("mergeProxyResponseCookies", "reqcv", reqcv)
-	// reqcKey := strings.SplitN(reqcv, "=", 1)[0]
-	// for _, prescv := range proxyResCookies {
-	// slog.Debug("mergeProxyResponseCookies", "prescv", prescv)
-	// prescKey := strings.SplitN(prescv, "=", 1)[0]
-	// slog.Debug("mergeProxyResponseCookies", "prescKey", prescKey, "reqcKey", reqcKey)
-	reqCookies = append(reqCookies, proxyResCookies...)
-	// if prescKey == reqcKey {
-	// 	fmt.Println("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
-	// 	slog.Debug("mergeProxyResponseCookies", "reqci", reqci, "prescv", prescv)
-	// 	reqCookies[reqci] = prescv
-	// 	break
-	// }
-	// 	}
-	// }
+func mergeProxyResponseCookies(reqCookie string, proxyRespCookies []string) string {
+	var cookies []string
+	var hasCsrfToken bool
+	var hasSession bool
+	for _, respcv := range proxyRespCookies {
+		slog.Debug("mergeProxyResponseCookies", "respcv", respcv)
+		v := strings.Split(respcv, ";")[0]
+		cookies = append(cookies, v)
+		if strings.HasPrefix(respcv, "csrf_token") {
+			hasCsrfToken = true
+		}
+		if strings.HasPrefix(respcv, "kratos_session") {
+			hasSession = true
+		}
+	}
+	for _, reqcv := range strings.Split(reqCookie, "; ") {
+		slog.Debug("mergeProxyResponseCookies", "reqcv", reqcv)
+		if !hasCsrfToken && strings.HasPrefix(reqcv, "csrf_token") {
+			cookies = append(cookies, reqcv)
+		}
+		if !hasSession && strings.HasPrefix(reqcv, "kratos_session") {
+			cookies = append(cookies, reqcv)
+		}
+	}
 
-	return strings.Join(reqCookies, " ")
+	return strings.Join(cookies, "; ")
 }
 
 // ---------------------- viewError ----------------------

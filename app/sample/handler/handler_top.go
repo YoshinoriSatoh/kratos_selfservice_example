@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 )
 
@@ -74,8 +75,12 @@ func (p *Provider) handleGetTop(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
+	slog.Debug("handleGetTop", "request", r.Header["Cookie"])
+
 	// prepare views
 	topIndexView := newView("top/index.html")
+
+	slog.Debug("", "session", session)
 
 	// render
 	topIndexView.addParams(map[string]any{

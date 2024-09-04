@@ -73,7 +73,7 @@ func viewFromQueryParam(base64str string) *view {
 
 func setCookie(w http.ResponseWriter, cookie []string) {
 	for _, v := range cookie {
-		w.Header().Set("Set-Cookie", v)
+		w.Header().Add("Set-Cookie", v)
 	}
 }
 
@@ -85,16 +85,23 @@ func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
 
 func mergeProxyResponseCookies(reqCookie string, proxyResCookies []string) string {
 	reqCookies := strings.Split(reqCookie, " ")
-	for reqci, reqcv := range reqCookies {
-		reqcKey := strings.SplitN(reqcv, "=", 1)[0]
-		for _, prescv := range proxyResCookies {
-			prescKey := strings.SplitN(prescv, "=", 1)[0]
-			if prescKey == reqcKey {
-				reqCookies[reqci] = prescv
-				break
-			}
-		}
-	}
+	slog.Debug("mergeProxyResponseCookies", "reqCookies", reqCookies)
+	// for reqci, reqcv := range reqCookies {
+	// 	slog.Debug("mergeProxyResponseCookies", "reqcv", reqcv)
+	// reqcKey := strings.SplitN(reqcv, "=", 1)[0]
+	// for _, prescv := range proxyResCookies {
+	// slog.Debug("mergeProxyResponseCookies", "prescv", prescv)
+	// prescKey := strings.SplitN(prescv, "=", 1)[0]
+	// slog.Debug("mergeProxyResponseCookies", "prescKey", prescKey, "reqcKey", reqcKey)
+	reqCookies = append(reqCookies, proxyResCookies...)
+	// if prescKey == reqcKey {
+	// 	fmt.Println("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
+	// 	slog.Debug("mergeProxyResponseCookies", "reqci", reqci, "prescv", prescv)
+	// 	reqCookies[reqci] = prescv
+	// 	break
+	// }
+	// 	}
+	// }
 
 	return strings.Join(reqCookies, " ")
 }
@@ -296,8 +303,8 @@ func redirect(w http.ResponseWriter, r *http.Request, redirectTo string) {
 	if r.Header.Get("HX-Request") == "true" {
 		slog.Info("HX-Redirect")
 		w.Header().Set("HX-Redirect", redirectTo)
-		w.Header().Set("HX-Location", redirectTo)
-		w.WriteHeader(http.StatusSeeOther)
+		// w.Header().Set("HX-Location", redirectTo)
+		// w.WriteHeader(http.StatusSeeOther)
 	} else {
 		slog.Info("Redirect")
 		http.Redirect(w, r, redirectTo, http.StatusSeeOther)

@@ -848,6 +848,7 @@ type UpdateRecoveryFlowResponse struct {
 	Header            KratosResponseHeader
 	Flow              RecoveryFlow
 	RecoveryFlowID    string
+	SettingsFlowID    string
 	RedirectBrowserTo string
 }
 
@@ -896,6 +897,9 @@ func (p *Provider) UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowR
 		RedirectBrowserTo: redirectBrowserTo,
 	}
 	for _, c := range kratosRespBody.ContinueWith {
+		if c.Action == "show_settings_ui" {
+			response.SettingsFlowID = c.Flow.ID
+		}
 		if c.Action == "show_recovery_ui" {
 			response.RecoveryFlowID = c.Flow.ID
 		}
@@ -930,7 +934,7 @@ func (p *Provider) GetSettingsFlow(ctx context.Context, r GetSettingsFlowRequest
 		Header: r.Header,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "CreateSettingsFlow", "requestKratosPublic error", err)
+		slog.ErrorContext(ctx, "GetSettingsFlow", "requestKratosPublic error", err)
 		return GetSettingsFlowResponse{}, err
 	}
 

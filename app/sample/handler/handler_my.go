@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"kratos_example/kratos"
 
@@ -59,7 +60,7 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := newGetAuthRegistrationRequestParams(r)
+	params := newGetMyPasswordRequestParams(r)
 
 	// prepare views
 	myPasswordIndexView := newView("my/password/index.html").addParams(params.toViewParams())
@@ -133,7 +134,7 @@ func newMyPasswordRequestParams(r *http.Request) *postMyPasswordRequestParams {
 // Return parameters that can refer in view template
 func (p *postMyPasswordRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"RecoveryFlowID":       p.FlowID,
+		"SettingsFlowID":       p.FlowID,
 		"CsrfToken":            p.CsrfToken,
 		"Password":             p.Password,
 		"PasswordConfirmation": p.PasswordConfirmation,
@@ -159,7 +160,7 @@ func (params *postMyPasswordRequestParams) validate() *viewError {
 func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
-
+	slog.Debug("", "session", session)
 	// collect request parameters
 	params := newMyPasswordRequestParams(r)
 
@@ -453,7 +454,8 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
 			// create login flow
-			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+			// kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+			kratosRequestHeader.Cookie = strings.Join(kratosResp.Header.Cookie, " ")
 			createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 				Header:  kratosRequestHeader,
 				Refresh: true,
@@ -507,7 +509,6 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	if kratosResp.VerificationFlowID != "" {
 		// transition to verification flow from settings flow
-		// Transferring cookies from update registration flow response
 		kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 		// get verification flow

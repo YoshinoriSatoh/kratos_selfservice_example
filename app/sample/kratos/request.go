@@ -56,12 +56,19 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 		return kratosResponse{}, err
 	}
 	req.Header.Set("Cookie", i.Header.Cookie)
+	// for _, v := range strings.Split(i.Header.Cookie, ";") {
+	// 	fmt.Println("cookie")
+	// 	fmt.Println(strings.TrimSpace(v))
+	// 	if strings.TrimSpace(v) != "" {
+	// 		req.Header.Add("Cookie", strings.TrimSpace(v))
+	// 	}
+	// }
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("True-Client-IP", i.Header.ClientIP)
 	// req.Header.Set("X-Forwarded-For", r.RemoteAddr)
 
-	// slog.DebugContext(ctx, "req", "Cookie", req.Header.Get("Cookie"))
+	slog.DebugContext(ctx, "req", "Cookie", req.Header.Get("Cookie"))
 	client := new(http.Client)
 	resp, err := client.Do(req)
 	if err != nil {

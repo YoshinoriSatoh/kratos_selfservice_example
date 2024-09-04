@@ -5,6 +5,7 @@ import (
 	"kratos_example/kratos"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
@@ -147,7 +148,8 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 		if len(identities) == 1 {
 			// Transferring cookies from create or get registration flow response
 			kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResponseHeader.Cookie)
+			// kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResponseHeader.Cookie)
+			kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 
 			// update Registration Flow
 			kratosResp, err := p.d.Kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
@@ -161,6 +163,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 				},
 			})
 			if err != nil {
+				slog.ErrorContext(ctx, "update registration error", "err", err)
 				registrationIndexOidcView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 				return
 			}
@@ -1040,9 +1043,10 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促す
 	var (
-		information     string
-		traits          kratos.Traits
-		showSocialLogin bool
+		information        string
+		traits             kratos.Traits
+		showSocialLogin    bool
+		identifierReadonly bool
 	)
 	if loginFlow.DuplicateIdentifier == "" {
 		showSocialLogin = true
@@ -1050,6 +1054,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 		traits.Email = loginFlow.DuplicateIdentifier
 		showSocialLogin = false
 		information = "メールアドレスとパスワードで登録された既存のアカウントが存在します。パスワードを入力してログインすると、Googleのアカウントと連携されます。"
+		identifierReadonly = true
 	}
 
 	// if existsAfterLoginHook(r, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE) {
@@ -1058,13 +1063,14 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	setCookie(w, kratosResponseHeader.Cookie)
 	loginIndexView.addParams(map[string]any{
-		"LoginFlowID":      loginFlow.FlowID,
-		"Information":      information,
-		"CsrfToken":        loginFlow.CsrfToken,
-		"Traits":           traits,
-		"ShowSocialLogin":  showSocialLogin,
-		"ShowPasskeyLogin": true,
-		"PasskeyChallenge": loginFlow.PasskeyChallenge,
+		"LoginFlowID":        loginFlow.FlowID,
+		"Information":        information,
+		"CsrfToken":          loginFlow.CsrfToken,
+		"Traits":             traits,
+		"ShowSocialLogin":    showSocialLogin,
+		"ShowPasskeyLogin":   true,
+		"IdentifierReadonly": identifierReadonly,
+		"PasskeyChallenge":   loginFlow.PasskeyChallenge,
 	}).render(w, r, session)
 }
 
@@ -1129,6 +1135,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
+		slog.ErrorContext(ctx, "validation error", "viewError", viewError)
 		loginFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
@@ -1150,6 +1157,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "update login flow error", "err", err)
 		loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
@@ -1719,6 +1727,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 
 	// prepare views
 	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
+	myPasswordIndexView := newView("my/password/index.html").addParams(params.toViewParams())
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
@@ -1732,9 +1741,10 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 	}))
 
 	// Recovery Flow 更新
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 	kratosResp, err := p.d.Kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
 		FlowID: params.FlowID,
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 		Body: kratos.UpdateRecoveryFlowRequestBody{
 			CsrfToken: params.CsrfToken,
 			Method:    "code",
@@ -1747,8 +1757,64 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 	}
 
 	setCookie(w, kratosResp.Header.Cookie)
+	// kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+	// kratosRequestHeader.Cookie = strings.Join(kratosResp.Header.Cookie, " ")
+	slog.Debug("mergeProxyResponseCookies", "kratosResp.Header.Cookie", kratosResp.Header.Cookie)
 	if kratosResp.RedirectBrowserTo != "" {
-		redirect(w, r, kratosResp.RedirectBrowserTo)
-		w.WriteHeader(http.StatusOK)
+		arr := strings.Split(kratosResp.RedirectBrowserTo, "=")
+		settingsFlowID := arr[1]
+
+		var cookies []string
+		var hasCsrfToken bool
+		for _, respcv := range kratosResp.Header.Cookie {
+			slog.Debug("mergeProxyResponseCookies", "respcv", respcv)
+			v := strings.Split(respcv, ";")[0]
+			if strings.HasPrefix(respcv, "kratos_session") {
+				cookies = append(cookies, v)
+			}
+			if strings.HasPrefix(respcv, "csrf_token") {
+				hasCsrfToken = true
+				cookies = append(cookies, v)
+			}
+			// 	v := strings.Split(respcv, ";")[0]
+			// 	cookies = append(cookies, v)
+			// }
+		}
+		// for _, cv := range cookies {
+		// 	if strings.HasPrefix(cv, "csrf_token") {
+		// 		break
+		// 	}
+		// 	for _, reqcv := range strings.Split(kratosRequestHeader.Cookie, " ") {
+		// 		if strings.HasPrefix(reqcv, "csrf_token") {
+		// 			cookies = append(cookies, reqcv)
+		// 		}
+		// 	}
+		// }
+
+		if !hasCsrfToken {
+			for _, reqcv := range r.Header["Cookie"] {
+				if strings.HasPrefix(reqcv, "csrf_token") {
+					cookies = append(cookies, reqcv)
+				}
+			}
+		}
+
+		slog.DebugContext(ctx, "handlePostAuthRecoveryCode", "cookies", cookies)
+		kratosRequestHeader.Cookie = strings.Join(cookies, "; ")
+
+		getSettingsFlowResp, err := p.d.Kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+			FlowID: settingsFlowID,
+			Header: kratosRequestHeader,
+		})
+		if err != nil {
+			recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		setCookie(w, getSettingsFlowResp.Header.Cookie)
+		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", settingsFlowID))
+		myPasswordIndexView.addParams(map[string]any{
+			"SettingsFlowID": settingsFlowID,
+			"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
+		}).render(w, r, session)
 	}
 }

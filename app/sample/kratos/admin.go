@@ -44,14 +44,14 @@ func (p *Provider) AdminGetIdentity(ctx context.Context, r AdminGetIdentityReque
 // Admin List Identities
 // --------------------------------------------------------------------------
 type AdminListIdentitiesRequest struct {
-	CredentialIdentifier string `json:"credential_identifier"`
+	CredentialIdentifier string `json:"credentials_identifier"`
 }
 
 func (p *Provider) AdminListIdentities(ctx context.Context, r AdminListIdentitiesRequest) ([]Identity, error) {
 	// Request to kratos
 	kratosResp, err := p.requestKratosAdmin(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?credential_identifier=%s", PATH_ADMIN_LIST_IDENTITIES, r.CredentialIdentifier),
+		Path:   fmt.Sprintf("%s?credentials_identifier=%s", PATH_ADMIN_LIST_IDENTITIES, r.CredentialIdentifier),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "AdminListIdentity", "requestKratosAdmin error", err)

@@ -1769,12 +1769,13 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		for _, respcv := range kratosResp.Header.Cookie {
 			slog.Debug("mergeProxyResponseCookies", "respcv", respcv)
 			v := strings.Split(respcv, ";")[0]
-			if strings.HasPrefix(respcv, "kratos_session") {
-				cookies = append(cookies, v)
-			}
+			cookies = append(cookies, v)
+			// if strings.HasPrefix(respcv, "kratos_session") {
+			// 	cookies = append(cookies, v)
+			// }
 			if strings.HasPrefix(respcv, "csrf_token") {
 				hasCsrfToken = true
-				cookies = append(cookies, v)
+				// cookies = append(cookies, v)
 			}
 			// 	v := strings.Split(respcv, ";")[0]
 			// 	cookies = append(cookies, v)

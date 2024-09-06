@@ -13,6 +13,8 @@ if [ -z "$password" ]; then
   password=overwatch2023
 fi
 
+lookup_secret=tns9wjbr
+
 publicEndpoint=http://localhost:4433
 adminEndpoint=http://localhost:4434
 
@@ -21,7 +23,7 @@ responseCreateLoginFlow=$(curl -v -s -X GET \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  $publicEndpoint/self-service/login/browser?refresh=true)
+  "$publicEndpoint/self-service/login/browser?aal=aal2&via=email")
 echo $responseCreateLoginFlow | jq 
 
 actionUrlSubmitLogin=$(echo $responseCreateLoginFlow | jq -r '.ui.action')
@@ -32,7 +34,18 @@ responseSubmitLoginFlow=$(curl -v -s -X POST \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  -d '{"csrf_token": "'$csrfToken'", "identifier": "'$email'", "method": "password", "password": "'$password'"}' \
+  -d '{"csrf_token": "'$csrfToken'", "identifier": "'$email'", "method": "code"}' \
+  "$actionUrlSubmitLogin")
+echo $responseSubmitLoginFlow | jq 
+
+read -p "please input code emailed to you: " code
+
+echo "\n\n\n------------- [submit login flow] -------------"
+responseSubmitLoginFlow=$(curl -v -s -X POST \
+  -c .session_cookie -b .session_cookie \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"csrf_token": "'$csrfToken'", "identifier": "'$email'", "method": "code", "code": "'$code'"}' \
   "$actionUrlSubmitLogin")
 echo $responseSubmitLoginFlow | jq 
 

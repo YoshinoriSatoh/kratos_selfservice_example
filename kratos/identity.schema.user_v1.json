@@ -18,6 +18,13 @@
               },
               "passkey": {
                 "display_name": true
+              },
+              "code": {
+                "identifier": true,
+                "via": "email"
+              },
+              "totp": {
+                "account_name": true
               }
             },
             "verification": {

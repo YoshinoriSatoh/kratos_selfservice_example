@@ -539,8 +539,9 @@ type kratosCreateLoginFlowRespnseBody struct {
 func (p *Provider) CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLoginFlowResponse, error) {
 	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_LOGIN_FLOW
+	// path = fmt.Sprintf("%s?aal=aal2", path)
 	if r.Refresh {
-		path = fmt.Sprintf("%s?refresh=true", path)
+		path = fmt.Sprintf("%s&refresh=true", path)
 	}
 
 	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{

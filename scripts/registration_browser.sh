@@ -32,7 +32,7 @@ responseUpdateRegistrationFlow=$(curl -v -s -X POST \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  -d '{"csrf_token": "'$csrfToken'", "traits.email": "'$email'", "password": "'$password'", "method": "password"}' \
+  -d '{"csrf_token": "'$csrfToken'", "traits.email": "'$email'", "password": "'$password'", "method": "password", "traits.firstname": "firstname", "traits.lastname": "lastname", "traits.nickname": "nickname"}' \
   "$actionUrl") 
 echo $responseUpdateRegistrationFlow | jq
 

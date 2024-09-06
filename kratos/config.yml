@@ -47,7 +47,12 @@ selfservice:
         haveibeenpwned_enabled: true
         min_password_length: 8
         identifier_similarity_check_enabled: true
+    code:
+      mfa_enabled: false
+      passwordless_enabled: true
     profile:
+      enabled: true
+    lookup_secret:
       enabled: true
     oidc:
       enabled: true
@@ -89,6 +94,11 @@ selfservice:
           origins:
             - http://localhost:4433
             - http://localhost:3000
+    totp:
+      config:
+        # The "issuer" is the name in the TOTP application users see when getting a one-time password.
+        issuer: ExampleIssuer.com
+      enabled: true
   flows:
     registration:
       enabled: true
@@ -133,6 +143,8 @@ selfservice:
 session:
   cookie:
     name: "kratos_session"
+  whoami:
+    required_aal: highest_available
 secrets:
   cookie:
     - ipsumipsumipsumi

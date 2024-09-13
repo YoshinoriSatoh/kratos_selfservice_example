@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"kratos_example/externals/sms"
 	"kratos_example/kratos"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ type Provider struct {
 
 type Dependencies struct {
 	Kratos *kratos.Provider
+	Sms    *sms.Provider
 }
 
 type NewInput struct {
@@ -86,6 +88,9 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("GET /item/{id}", p.baseMiddleware(p.handleGetItem))
 	mux.Handle("GET /item/{id}/purchase", p.baseMiddleware(p.handleGetItemPurchase))
 	mux.Handle("POST /item/{id}/purchase", p.baseMiddleware(p.handlePostItemPurchase))
+
+	// SMS
+	mux.Handle("POST /sms/send", p.baseMiddleware(p.handlePostSmsSend))
 
 	return mux
 }

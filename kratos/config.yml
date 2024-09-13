@@ -48,8 +48,8 @@ selfservice:
         min_password_length: 8
         identifier_similarity_check_enabled: true
     code:
-      mfa_enabled: false
-      passwordless_enabled: true
+      mfa_enabled: true
+      passwordless_enabled: false
     profile:
       enabled: true
     lookup_secret:
@@ -157,6 +157,21 @@ courier:
     connection_uri: smtps://test:test@mailslurper:1025/?skip_ssl_verify=true
     from_address: "noreply@local"
     from_name: "kratos"
+  sms:
+    from: ""
+    request_config:
+      url: http://app-sample:3000/sms/send
+      method: POST
+      body: file:///etc/config/kratos/templates/sms.body.jsonnet
+  channels:
+    - id: sms
+      type: http
+      request_config:
+        url: http://app-sample:3000/sms/send
+        method: POST
+        body: file:///etc/config/kratos/templates/sms.body.jsonnet
+        # headers:
+        #   Content-Type: application/x-www-form-urlencoded # defaults to application/json
   templates:
     verification_code:
       valid:
@@ -165,6 +180,9 @@ courier:
             html: file:///etc/config/kratos/templates/verification_code/valid/email.body.gotmpl
             plaintext: file:///etc/config/kratos/templates/verification_code/valid/email.body.plaintext.gotmpl
           subject: file:///etc/config/kratos/templates/verification_code/valid/email.subject.gotmpl
+        sms: 
+          body:
+            plaintext: file:///etc/config/kratos/templates/verification_code/valid/sms.body.plaintext.gotmpl
     recovery_code:
       valid:
         email:
@@ -172,7 +190,9 @@ courier:
             html: file:///etc/config/kratos/templates/recovery_code/valid/email.body.gotmpl
             plaintext: file:///etc/config/kratos/templates/recovery_code/valid/email.body.plaintext.gotmpl
           subject: file:///etc/config/kratos/templates/recovery_code/valid/email.subject.gotmpl
-
+        sms: 
+          body:
+            plaintext: file:///etc/config/kratos/templates/recovery_code/valid/sms.body.plaintext.gotmpl
 log:
   level: debug
   format: text

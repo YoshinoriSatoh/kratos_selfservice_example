@@ -1,6 +1,7 @@
 package main
 
 import (
+	"kratos_example/externals/sms"
 	"kratos_example/handler"
 	"kratos_example/kratos"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 var (
 	kratosProvider  *kratos.Provider
 	handlerProvider *handler.Provider
+	smsProvider     *sms.Provider
 )
 
 func init() {
@@ -19,6 +21,11 @@ func init() {
 		AddSource: true,
 		Level:     slog.LevelDebug,
 	})))
+
+	err := LoadConfig()
+	if err != nil {
+		panic(err)
+	}
 
 	// Init packages
 	kratos.Init(kratos.InitInput{
@@ -37,8 +44,6 @@ func init() {
 	})
 
 	// Create package providers with dependencies
-	var err error
-
 	kratosProvider, err = kratos.New(
 		kratos.NewInput{
 			Dependencies: kratos.Dependencies{},
@@ -48,10 +53,20 @@ func init() {
 		panic(err)
 	}
 
+	if config.AwsProfile == "" {
+		smsProvider, err = sms.New(config.Sms.AwsRegion)
+	} else {
+		smsProvider, err = sms.New(config.Sms.AwsRegion, sms.WithProfile(config.AwsProfile))
+	}
+	if err != nil {
+		panic(err)
+	}
+
 	handlerProvider, err = handler.New(
 		handler.NewInput{
 			Dependencies: handler.Dependencies{
 				Kratos: kratosProvider,
+				Sms:    smsProvider,
 			},
 		},
 	)

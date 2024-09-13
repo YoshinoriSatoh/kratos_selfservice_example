@@ -13,8 +13,6 @@ if [ -z "$password" ]; then
   password=overwatch2023
 fi
 
-lookup_secret=tns9wjbr
-
 publicEndpoint=http://localhost:4433
 adminEndpoint=http://localhost:4434
 

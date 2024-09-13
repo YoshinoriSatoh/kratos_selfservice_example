@@ -13,6 +13,8 @@ if [ -z "$password" ]; then
   password=overwatch2023
 fi
 
+phone=$3
+
 publicEndpoint=http://localhost:4433
 adminEndpoint=http://localhost:4434
 
@@ -32,13 +34,13 @@ responseUpdateRegistrationFlow=$(curl -v -s -X POST \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  -d '{"csrf_token": "'$csrfToken'", "traits.email": "'$email'", "password": "'$password'", "method": "password", "traits.firstname": "firstname", "traits.lastname": "lastname", "traits.nickname": "nickname"}' \
+  -d '{"csrf_token": "'$csrfToken'", "traits.email": "'$email'", "traits.phone": "'$phone'", "password": "'$password'", "method": "password", "traits.firstname": "firstname", "traits.lastname": "lastname", "traits.nickname": "nickname"}' \
   "$actionUrl") 
 echo $responseUpdateRegistrationFlow | jq
 
 read -p "please input code emailed to you: " code
 
-verificationFlowId=$(echo $responseUpdateRegistrationFlow | jq -r -c '.continue_with[] | select(.action=="show_verification_ui") | .flow.id')
+verificationFlowId=$(echo $responseUpdateRegistrationFlow | jq -r -c '.continue_with[0] | select(.action=="show_verification_ui") | .flow.id')
 echo $verificationFlowId 
 
 echo "\n\n\n------------- [get verification flow] -------------"

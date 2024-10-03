@@ -23,7 +23,7 @@ responseCreateLoginFlow=$(curl -v -s -X GET \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  "$publicEndpoint/self-service/login/browser?refresh=true&aal=aal2&via=email")
+  "$publicEndpoint/self-service/login/browser?refresh=true&aal=aal2")
 echo $responseCreateLoginFlow | jq 
 
 actionUrlSubmitLogin=$(echo $responseCreateLoginFlow | jq -r '.ui.action')

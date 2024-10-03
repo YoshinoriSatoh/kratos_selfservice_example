@@ -40,7 +40,7 @@ echo $responseUpdateRegistrationFlow | jq
 
 read -p "please input code emailed to you: " code
 
-verificationFlowId=$(echo $responseUpdateRegistrationFlow | jq -r -c '.continue_with[0] | select(.action=="show_verification_ui") | .flow.id')
+verificationFlowId=$(echo $responseUpdateRegistrationFlow | jq -r -c '.continue_with[] | select(.action=="show_verification_ui") | .flow.id')
 echo $verificationFlowId 
 
 echo "\n\n\n------------- [get verification flow] -------------"

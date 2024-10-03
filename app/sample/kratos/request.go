@@ -146,6 +146,7 @@ func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error
 		}
 
 		var errGeneric ErrorGeneric
+		slog.ErrorContext(ctx, "getErrorFromOutput", "body bytes", string(bodyBytes))
 		if err := json.Unmarshal(bodyBytes, &errGeneric); err != nil {
 			slog.ErrorContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
 			return err

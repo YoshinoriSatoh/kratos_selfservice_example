@@ -13,8 +13,6 @@ if [ -z "$password" ]; then
   password=overwatch2023
 fi
 
-phone=$3
-
 publicEndpoint=http://localhost:4433
 adminEndpoint=http://localhost:4434
 
@@ -23,7 +21,7 @@ responseCreateLoginFlow=$(curl -v -s -X GET \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  "$publicEndpoint/self-service/login/browser?aal=aal2")
+  "$publicEndpoint/self-service/login/browser?aal=aal1")
 echo $responseCreateLoginFlow | jq 
 
 actionUrlSubmitLogin=$(echo $responseCreateLoginFlow | jq -r '.ui.action')
@@ -34,7 +32,7 @@ responseSubmitLoginFlow=$(curl -v -s -X POST \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
-  -d '{"csrf_token": "'$csrfToken'", "identifier": "'$phone'", "method": "code"}' \
+  -d '{"csrf_token": "'$csrfToken'", "identifier": "'$email'", "method": "code"}' \
   "$actionUrlSubmitLogin")
 echo $responseSubmitLoginFlow | jq 
 

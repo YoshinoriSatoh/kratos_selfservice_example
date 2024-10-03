@@ -2,7 +2,7 @@ services:
   kratos:
     depends_on:
       - kratos-migrate
-    image: oryd/kratos:v1.2.0
+    image: oryd/kratos:v1.3.0
     command: serve -c /etc/config/kratos/config.yml --dev --watch-courier
     ports:
       - 4433:4433
@@ -16,7 +16,7 @@ services:
   kratos-migrate:
     depends_on:
       - db-kratos
-    image: oryd/kratos:v1.2.0
+    image: oryd/kratos:v1.3.0
     command: -c /etc/config/kratos/config.yml migrate sql -e --yes
     volumes:
       - type: bind

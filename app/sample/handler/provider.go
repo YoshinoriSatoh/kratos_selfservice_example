@@ -49,9 +49,10 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 
 	// Authentication Registration
 	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
-	mux.Handle("POST /auth/registration", p.baseMiddleware(p.handlePostAuthRegistration))
-	mux.Handle("POST /auth/registration/oidc", p.baseMiddleware(p.handlePostAuthRegistrationOidc))
-	mux.Handle("POST /auth/registration/passkey", p.baseMiddleware(p.handlePostAuthRegistrationPasskey))
+	mux.Handle("POST /auth/registration/step-one", p.baseMiddleware(p.handlePostAuthRegistrationStepOne))
+	mux.Handle("POST /auth/registration/step-two/password", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoPassword))
+	mux.Handle("POST /auth/registration/step-two/oidc", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoOidc))
+	mux.Handle("POST /auth/registration/step-two/passkey", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoPasskey))
 
 	// Authentication Verification
 	mux.Handle("GET /auth/verification", p.baseMiddleware(p.handleGetAuthVerification))

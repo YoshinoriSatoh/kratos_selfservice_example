@@ -64,7 +64,7 @@
 
 <form 
   id="registration-form"
-  hx-post="/auth/registration/passkey?flow={{.RegistrationFlowID}}"
+  hx-post="/auth/registration/step-two/passkey?flow={{.RegistrationFlowID}}"
   hx-swap="outerHTML" 
   hx-target="this"
   hx-trigger="post_after_passkey_registration"

@@ -82,12 +82,12 @@
   <form 
     id="registration-form"
     {{ if eq .Method "password" }}
-    hx-post="/auth/registration?flow={{.RegistrationFlowID}}" 
+    hx-post="/auth/registration/step-one?flow={{.RegistrationFlowID}}" 
     {{ else if eq .Method "oidc" }}
-    hx-post="/auth/registration/oidc?flow={{.RegistrationFlowID}}" 
+    hx-post="/auth/registration/step-two/oidc?flow={{.RegistrationFlowID}}" 
     hx-vals='{"provider": "{{.Provider}}"}'
     {{ else if eq .Method "passkey" }}
-    hx-post="/auth/registration/passkey?flow={{.RegistrationFlowID}}" 
+    hx-post="/auth/registration/step-two/passkey?flow={{.RegistrationFlowID}}" 
     hx-trigger="post_after_passkey_registration"
     {{ end }}
     hx-swap="outerHTML" 

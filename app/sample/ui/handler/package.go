@@ -47,7 +47,7 @@ func Init(i InitInput) {
 	// i18n
 	bundle := i18n.NewBundle(language.Japanese)
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-	bundle.LoadMessageFile("active.ja.toml")
+	bundle.LoadMessageFile("ui/active.ja.toml")
 
 	pkgVars.loc = i18n.NewLocalizer(bundle, language.Japanese.String())
 }
@@ -61,8 +61,8 @@ func loadTemplate() {
 			return template.HTMLAttr(text)
 		},
 	}
-	pkgVars.tmpl = template.Must(template.New("").Funcs(sprig.FuncMap()).Funcs(funcMap).ParseGlob("templates/**/*.html"))
-	pkgVars.tmpl = template.Must(pkgVars.tmpl.ParseGlob("templates/**/**/*.html"))
+	pkgVars.tmpl = template.Must(template.New("").Funcs(sprig.FuncMap()).Funcs(funcMap).ParseGlob("ui/templates/**/*.html"))
+	pkgVars.tmpl = template.Must(pkgVars.tmpl.ParseGlob("ui/templates/**/**/*.html"))
 }
 
 func initValidator() {

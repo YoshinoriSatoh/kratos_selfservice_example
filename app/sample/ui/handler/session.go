@@ -2,7 +2,8 @@ package handler
 
 import (
 	"context"
-	"kratos_example/kratos"
+
+	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
 )
 
 func getSession(ctx context.Context) *kratos.Session {

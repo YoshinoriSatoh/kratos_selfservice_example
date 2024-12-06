@@ -2,11 +2,12 @@ package handler
 
 import (
 	"context"
-	"kratos_example/externals/sms"
-	"kratos_example/kratos"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/external/sms"
 
 	"github.com/google/uuid"
 )
@@ -48,7 +49,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	}))
 
 	// Authentication Registration
-	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
+	mux.Handle("GET /auth/registration", p.baseMiddleware(p.getAuthRegistration))
 	mux.Handle("POST /auth/registration/step-one", p.baseMiddleware(p.handlePostAuthRegistrationStepOne))
 	mux.Handle("POST /auth/registration/step-two/password", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoPassword))
 	mux.Handle("POST /auth/registration/step-two/oidc", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoOidc))

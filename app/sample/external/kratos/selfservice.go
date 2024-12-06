@@ -32,6 +32,34 @@ const (
 )
 
 // --------------------------------------------------------------------------
+// Create or Get Registration Flow
+// --------------------------------------------------------------------------
+func (p *Provider) CreateOrGetRegistrationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RegistrationFlow, KratosResponseHeader, error) {
+	var (
+		err                  error
+		registrationFlow     RegistrationFlow
+		kratosResponseHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createRegistrationFlowResp CreateRegistrationFlowResponse
+		createRegistrationFlowResp, err = p.CreateRegistrationFlow(ctx, CreateRegistrationFlowRequest{
+			Header: h,
+		})
+		kratosResponseHeader = createRegistrationFlowResp.Header
+		registrationFlow = createRegistrationFlowResp.RegistrationFlow
+	} else {
+		var getRegistrationFlowResp GetRegistrationFlowResponse
+		getRegistrationFlowResp, err = p.GetRegistrationFlow(ctx, GetRegistrationFlowRequest{
+			FlowID: flowID,
+			Header: h,
+		})
+		kratosResponseHeader = getRegistrationFlowResp.Header
+		registrationFlow = getRegistrationFlowResp.RegistrationFlow
+	}
+	return registrationFlow, kratosResponseHeader, err
+}
+
+// --------------------------------------------------------------------------
 // Get Registration Flow
 // --------------------------------------------------------------------------
 type GetRegistrationFlowRequest struct {

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"kratos_example/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )

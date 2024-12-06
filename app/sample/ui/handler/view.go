@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"kratos_example/kratos"
 	"log/slog"
 	"maps"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/nicksnyder/go-i18n/v2/i18n"

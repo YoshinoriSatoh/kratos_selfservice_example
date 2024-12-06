@@ -1,4 +1,4 @@
-module kratos_example
+module github.com/YoshinoriSatoh/kratos_example
 
 go 1.23
 

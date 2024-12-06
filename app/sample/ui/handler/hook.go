@@ -4,8 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"kratos_example/kratos"
 	"log/slog"
+
+	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
 )
 
 type HookID string

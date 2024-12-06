@@ -1,12 +1,13 @@
 package main
 
 import (
-	"kratos_example/externals/sms"
-	"kratos_example/handler"
-	"kratos_example/kratos"
 	"log/slog"
 	"net/http"
 	"os"
+
+	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/external/sms"
+	"github.com/YoshinoriSatoh/kratos_example/ui/handler"
 )
 
 var (

@@ -16,28 +16,27 @@ const (
 // Admin Get Identity
 // --------------------------------------------------------------------------
 type AdminGetIdentityRequest struct {
-	ID                string `json:"id"`
-	IncludeCredential string `json:"include_credential"`
+	ID string `json:"id"`
 }
 
-func (p *Provider) AdminGetIdentity(ctx context.Context, r AdminGetIdentityRequest) (Identity, error) {
+func (p *Provider) AdminGetIdentity(ctx context.Context, r AdminGetIdentityRequest) (*Identity, error) {
 	// Request to kratos
 	kratosResp, err := p.requestKratosAdmin(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s/%s?include_credential=%s", PATH_ADMIN_LIST_IDENTITIES, r.ID, r.IncludeCredential),
+		Path:   fmt.Sprintf("%s/%s", PATH_ADMIN_LIST_IDENTITIES, r.ID),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "AdminGetIdentity", "requestKratosAdmin error", err)
-		return Identity{}, err
+		return &Identity{}, err
 	}
 
 	var identity Identity
 	if err := json.Unmarshal(kratosResp.BodyBytes, &identity); err != nil {
 		slog.ErrorContext(ctx, "AdminGetIdentity", "json unmarshal error", err)
-		return Identity{}, err
+		return &Identity{}, err
 	}
 
-	return identity, nil
+	return &identity, nil
 }
 
 // --------------------------------------------------------------------------

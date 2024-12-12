@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -60,7 +59,8 @@ type getAuthRegistrationViews struct {
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthRegistration(ctx context.Context, w http.ResponseWriter, r *http.Request) (*getAuthRegistrationRequestParams, getAuthRegistrationViews, *viewError, error) {
+func prepareGetAuthRegistration(w http.ResponseWriter, r *http.Request) (*getAuthRegistrationRequestParams, getAuthRegistrationViews, *viewError, error) {
+	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data
@@ -94,7 +94,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthRegistration(ctx, w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthRegistration(w, r)
 	if err != nil {
 		slog.ErrorContext(ctx, "prepareGetAuthRegistration failed", "err", err)
 		return

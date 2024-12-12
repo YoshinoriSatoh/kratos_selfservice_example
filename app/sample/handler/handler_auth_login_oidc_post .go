@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"

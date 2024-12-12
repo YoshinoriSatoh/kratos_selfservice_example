@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -51,7 +52,8 @@ func (params *postAuthRecoveryCodeRequestParams) validate() *viewError {
 
 // Views
 type getAuthRecoveryCodeViews struct {
-	index *view
+	index           *view
+	myPasswordIndex *view
 }
 
 // collect rendering data and validate request parameters.
@@ -65,7 +67,8 @@ func prepareGetAuthRecoveryCode(w http.ResponseWriter, r *http.Request) (*postAu
 	}))
 	reqParams := newPostAutRecoveryCodeRequestParams(r)
 	views := getAuthRecoveryCodeViews{
-		index: newView("auth/recovery/_code_form.html").addParams(reqParams.toViewParams()),
+		index:           newView("auth/recovery/_code_form.html").addParams(reqParams.toViewParams()),
+		myPasswordIndex: newView("my/password/index.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -87,9 +90,6 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		slog.ErrorContext(ctx, "prepareGetAuthRecoveryCode failed", "err", err)
 		return
 	}
-
-	// prepare views
-	myPasswordIndexView := newView("my/password/index.html").addParams(reqParams.toViewParams())
 
 	// Recovery Flow 更新
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
@@ -123,7 +123,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		}
 		addCookies(w, getSettingsFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", settingsFlowID))
-		myPasswordIndexView.addParams(map[string]any{
+		views.myPasswordIndex.addParams(map[string]any{
 			"SettingsFlowID": settingsFlowID,
 			"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
 		}).render(w, r, session)

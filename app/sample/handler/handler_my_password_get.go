@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
@@ -92,7 +94,6 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 
 	// create or get settings Flow
 	var (
-		err                  error
 		settingsFlow         kratos.SettingsFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)

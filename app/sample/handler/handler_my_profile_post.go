@@ -86,7 +86,10 @@ func makeTraitsForUpdateSettings(session *kratos.Session, params *postMyProfileR
 
 // Views
 type getMyProfilePostViews struct {
-	form *view
+	form             *view
+	loginIndex       *view
+	verificationCode *view
+	topIndex         *view
 }
 
 // collect rendering data and validate request parameters.
@@ -100,7 +103,10 @@ func prepareGetMyProfilePost(w http.ResponseWriter, r *http.Request) (*postMyPro
 	}))
 	reqParams := newMyProfileRequestParams(r)
 	views := getMyProfilePostViews{
-		form: newView("my/profile/_form.html").addParams(reqParams.toViewParams()),
+		form:             newView("my/profile/_form.html").addParams(reqParams.toViewParams()),
+		loginIndex:       newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+		verificationCode: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
+		topIndex:         newView("top/index.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -123,12 +129,6 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(ctx, "prepareGetMyProfilePost failed", "err", err)
 		return
 	}
-
-	// prepare views
-	myProfileFormView := newView("my/profile/_form.html").addParams(reqParams.toViewParams())
-	loginIndexView := newView("auth/login/index.html").addParams(reqParams.toViewParams())
-	verificationCodeView := newView("auth/verification/code.html").addParams(reqParams.toViewParams())
-	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
 	// update settings flow
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
@@ -154,24 +154,24 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				Refresh: true,
 			})
 			if err != nil {
-				myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 				return
 			}
 
 			// for re-render profile form
-				year, month, day := parseDate(reqParams.Birthdate)
-				myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
-					"SettingsFlowID": reqParams.FlowID,
-					"Information":    "ログインされました。プロフィールを更新できます。",
-					"CsrfToken":      reqParams.CsrfToken,
-					"Email":          reqParams.Email,
-					"Firstname":      reqParams.Firstname,
-					"Lastname":       reqParams.Lastname,
-					"Nickname":       reqParams.Nickname,
-					"BirthdateYear":  year,
-					"BirthdateMonth": month,
-					"BirthdateDay":   day,
-				})
+			year, month, day := parseDate(reqParams.Birthdate)
+			myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
+				"SettingsFlowID": reqParams.FlowID,
+				"Information":    "ログインされました。プロフィールを更新できます。",
+				"CsrfToken":      reqParams.CsrfToken,
+				"Email":          reqParams.Email,
+				"Firstname":      reqParams.Firstname,
+				"Lastname":       reqParams.Lastname,
+				"Nickname":       reqParams.Nickname,
+				"BirthdateYear":  year,
+				"BirthdateMonth": month,
+				"BirthdateDay":   day,
+			})
 
 			hook := &hook{
 				HookID: HookIDUpdateSettingsProfile,
@@ -185,7 +185,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			// render login form
 			addCookies(w, createLoginFlowResp.Header.Cookie)
 			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-			loginIndexView.addParams(map[string]any{
+			views.loginIndex.addParams(map[string]any{
 				"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
 				"Information": "プロフィール更新のために再度ログインをお願いします。",
 				"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,
@@ -196,7 +196,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// render form with error
-		myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -212,7 +212,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			slog.DebugContext(ctx, "get verification error", "err", err.Error())
-			myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 
@@ -224,7 +224,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		if err != nil {
-			myProfileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 
@@ -246,7 +246,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		// render verification code page (replace <body> tag and push url)
 		addCookies(w, getVerificationFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
-		verificationCodeView.addParams(map[string]any{
+		views.verificationCode.addParams(map[string]any{
 			"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
 			"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
 			"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
@@ -258,7 +258,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	// render top page
 	addCookies(w, kratosResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
-	topIndexView.addParams(map[string]any{
+	views.topIndex.addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }

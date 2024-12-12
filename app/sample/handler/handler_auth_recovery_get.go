@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
@@ -81,6 +83,8 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	ctx := r.Context()
 	session := getSession(ctx)
 
+	var err error
+
 	// collect rendering data and validate request parameters.
 	reqParams, views, baseViewError, err := prepareGetAuthRecovery(w, r)
 	if err != nil {
@@ -90,7 +94,6 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 
 	// create or get recovery Flow
 	var (
-		err                  error
 		recoveryFlow         kratos.RecoveryFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)

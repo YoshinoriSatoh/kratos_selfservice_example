@@ -61,6 +61,7 @@ func (params *postAuthLoginRequestParams) validate() *viewError {
 // Views
 type getAuthLoginPostViews struct {
 	index *view
+	top   *view
 }
 
 // collect rendering data and validate request parameters.
@@ -75,6 +76,7 @@ func prepareGetAuthLoginPost(w http.ResponseWriter, r *http.Request) (*postAuthL
 	reqParams := newPostAuthLoginRequestParams(r)
 	views := getAuthLoginPostViews{
 		index: newView("auth/login/_form.html").addParams(reqParams.toViewParams()),
+		top:   newView("top/index.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -96,9 +98,6 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(ctx, "prepareGetAuthLoginPost failed", "err", err)
 		return
 	}
-
-	// prepare views
-	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
 	// update login flow
 	updateLoginFlowResp, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
@@ -231,7 +230,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
-	topIndexView.addParams(map[string]any{
+	views.top.addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }

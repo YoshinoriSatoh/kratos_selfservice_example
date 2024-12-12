@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 // --------------------------------------------------------------------------
@@ -50,6 +53,7 @@ func (p *postAuthLogoutRequestParams) validate() *viewError {
 // Views
 type postAuthLogoutViews struct {
 	index *view
+	top   *view
 }
 
 // collect rendering data and validate request parameters.
@@ -64,6 +68,7 @@ func preparePostAuthLogout(w http.ResponseWriter, r *http.Request) (*postAuthLog
 	reqParams := newPostAuthLogoutRequestParams(r)
 	views := postAuthLogoutViews{
 		index: newView("auth/logout/index.html").addParams(reqParams.toViewParams()),
+		top:   newView("top/index.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -80,20 +85,18 @@ func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) 
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := preparePostAuthLogout(w, r)
+	_, views, _, err := preparePostAuthLogout(w, r)
 	if err != nil {
 		slog.ErrorContext(ctx, "preparePostAuthLogout failed", "err", err)
 		return
 	}
-
-	topIndexView := newView("top/index.html")
 
 	updateLogoutFlowResp, err := kratos.Logout(ctx, kratos.LogoutRequest{
 		Header: makeDefaultKratosRequestHeader(r),
 	})
 	if err != nil {
 		setHeadersForReplaceBody(w, "/")
-		topIndexView.addParams(map[string]any{
+		views.top.addParams(map[string]any{
 			"Items": items,
 		}).render(w, r, session)
 	}

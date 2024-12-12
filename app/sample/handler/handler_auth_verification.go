@@ -84,6 +84,8 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	session := getSession(ctx)
 
+	var err error
+
 	// collect rendering data and validate request parameters.
 	reqParams, views, baseViewError, err := prepareGetAuthVerification(w, r)
 	if err != nil {
@@ -93,7 +95,6 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 
 	// create or get verification Flow
 	var (
-		err                  error
 		verificationFlow     kratos.VerificationFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)

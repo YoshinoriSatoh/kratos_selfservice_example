@@ -49,8 +49,8 @@ func (p *getAuthVerificationCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
-// Handler GET /auth/verification/code
-func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
+// collect rendering data and validate request parameters.
+func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*getAuthVerificationCodeRequestParams, *view, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -63,13 +63,28 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
 		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
+		return params, verificationCodeView, viewError, nil
 	}
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_VERIFICATION_DEDAULT",
 	}))
+
+	return params, verificationCodeView, baseViewError, nil
+}
+
+// Handler GET /auth/verification/code
+func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data and validate request parameters.
+	params, verificationCodeView, baseViewError, err := prepareGetAuthVerificationCode(w, r)
+	if err != nil {
+		verificationCodeView.addParams(baseViewError.toViewParams()).render(w, r, session)
+		return
+	}
 
 	// create or get verification Flow
 	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), params.FlowID)

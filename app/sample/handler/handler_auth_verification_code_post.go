@@ -60,35 +60,46 @@ func (params *postAuthVerificationCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
+// collect rendering data and validate request parameters.
+func preparePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*postAuthVerificationCodeRequestParams, *view, *view, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_VERIFICATION_DEFAULT",
+	}))
+	reqParams := newPostAuthVerificationCodeRequestParams(r)
+	verificationCodeView := newView("auth/verification/_code_form.html").addParams(reqParams.toViewParams())
+	loginIndexView := newView("auth/login/index.html").addParams(reqParams.toViewParams())
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, verificationCodeView, loginIndexView, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, verificationCodeView, loginIndexView, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAuthVerificationCodeRequestParams(r)
-
-	// prepare views
-	verificationCodeView := newView("auth/verification/_code_form.html").addParams(params.toViewParams())
-	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, verificationCodeView, loginIndexView, baseViewError, err := preparePostAuthVerificationCode(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "preparePostAuthVerificationCode failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_VERIFICATION_DEFAULT",
-	}))
-
 	// Verification Flow 更新
 	_, kratosReqHeaderForNext, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateVerificationFlowRequestBody{
-			Code:      params.Code,
-			CsrfToken: params.CsrfToken,
+			Code:      reqParams.Code,
+			CsrfToken: reqParams.CsrfToken,
 		},
 	})
 	if err != nil {
@@ -97,11 +108,11 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 		return
 	}
 
-	if params.Render != "" {
-		fmt.Println(params.Render)
-		v := viewFromQueryParam(params.Render)
+	if reqParams.Render != "" {
+		fmt.Println(reqParams.Render)
+		v := viewFromQueryParam(reqParams.Render)
 		setHeadersForReplaceBody(w, v.Path)
-		viewFromQueryParam(params.Render).render(w, r, session)
+		viewFromQueryParam(reqParams.Render).render(w, r, session)
 		return
 	}
 

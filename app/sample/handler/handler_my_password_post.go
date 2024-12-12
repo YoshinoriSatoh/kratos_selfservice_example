@@ -55,39 +55,60 @@ func (params *postMyPasswordRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getMyPasswordPostViews struct {
+	form *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetMyPasswordPost(w http.ResponseWriter, r *http.Request) (*postMyPasswordRequestParams, getMyPasswordPostViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
+	}))
+	reqParams := newMyPasswordRequestParams(r)
+	views := getMyPasswordPostViews{
+		form: newView("my/password/_form.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 	slog.Debug("", "session", session)
-	// collect request parameters
-	params := newMyPasswordRequestParams(r)
 
-	// prepare views
-	myPasswordFormView := newView("my/password/_form.html").addParams(params.toViewParams())
-	topIndexView := newView("top/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		myPasswordFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetMyPasswordPost(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetMyPasswordPost failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-	}))
+	// prepare views
+	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
 	kratosResp, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: reqParams.CsrfToken,
 			Method:    "password",
-			Password:  params.Password,
+			Password:  reqParams.Password,
 		},
 	})
 	if err != nil {
-		myPasswordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 

@@ -84,40 +84,61 @@ func makeTraitsForUpdateSettings(session *kratos.Session, params *postMyProfileR
 	return traits
 }
 
+// Views
+type getMyProfilePostViews struct {
+	form *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetMyProfilePost(w http.ResponseWriter, r *http.Request) (*postMyProfileRequestPostForm, getMyProfilePostViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
+	}))
+	reqParams := newMyProfileRequestParams(r)
+	views := getMyProfilePostViews{
+		form: newView("my/profile/_form.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 // Handler POST /my/profile
 func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newMyProfileRequestParams(r)
-
-	// prepare views
-	myProfileFormView := newView("my/profile/_form.html").addParams(params.toViewParams())
-	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
-	verificationCodeView := newView("auth/verification/code.html").addParams(params.toViewParams())
-	topIndexView := newView("top/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		myProfileFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetMyProfilePost(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetMyProfilePost failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-	}))
+	// prepare views
+	myProfileFormView := newView("my/profile/_form.html").addParams(reqParams.toViewParams())
+	loginIndexView := newView("auth/login/index.html").addParams(reqParams.toViewParams())
+	verificationCodeView := newView("auth/verification/code.html").addParams(reqParams.toViewParams())
+	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
 	// update settings flow
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 	kratosResp, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: kratosRequestHeader,
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: reqParams.CsrfToken,
 			Method:    "profile",
-			Traits:    makeTraitsForUpdateSettings(session, params),
+			Traits:    makeTraitsForUpdateSettings(session, reqParams),
 		},
 	})
 	if err != nil {
@@ -138,26 +159,26 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// for re-render profile form
-			year, month, day := parseDate(params.Birthdate)
-			myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
-				"SettingsFlowID": params.FlowID,
-				"Information":    "ログインされました。プロフィールを更新できます。",
-				"CsrfToken":      params.CsrfToken,
-				"Email":          params.Email,
-				"Firstname":      params.Firstname,
-				"Lastname":       params.Lastname,
-				"Nickname":       params.Nickname,
-				"BirthdateYear":  year,
-				"BirthdateMonth": month,
-				"BirthdateDay":   day,
-			})
+				year, month, day := parseDate(reqParams.Birthdate)
+				myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
+					"SettingsFlowID": reqParams.FlowID,
+					"Information":    "ログインされました。プロフィールを更新できます。",
+					"CsrfToken":      reqParams.CsrfToken,
+					"Email":          reqParams.Email,
+					"Firstname":      reqParams.Firstname,
+					"Lastname":       reqParams.Lastname,
+					"Nickname":       reqParams.Nickname,
+					"BirthdateYear":  year,
+					"BirthdateMonth": month,
+					"BirthdateDay":   day,
+				})
 
 			hook := &hook{
 				HookID: HookIDUpdateSettingsProfile,
 				UpdateSettingsProfileParams: HookParamsUpdateSettingsProfile{
-					FlowID:    params.FlowID,
-					CsrfToken: params.CsrfToken,
-					Traits:    makeTraitsForUpdateSettings(session, params),
+					FlowID:    reqParams.FlowID,
+					CsrfToken: reqParams.CsrfToken,
+					Traits:    makeTraitsForUpdateSettings(session, reqParams),
 				},
 			}
 
@@ -208,7 +229,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// for re-render profile form
-		year, month, day := parseDate(params.Birthdate)
+		year, month, day := parseDate(reqParams.Birthdate)
 		myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
 			"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
 			"Information":    "プロフィールが更新されました。",

@@ -53,41 +53,58 @@ func (params *postAuthLoginPasskeyRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthLoginPasskeyViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthLoginPasskey(w http.ResponseWriter, r *http.Request) (*postAuthLoginPasskeyRequestParams, getAuthLoginPasskeyViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_LOGIN_DEFAULT",
+	}))
+	reqParams := newPostAuthLoginPasskeyRequestParams(r)
+	views := getAuthLoginPasskeyViews{
+		index: newView("auth/login/_form_passkey.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAuthLoginPasskeyRequestParams(r)
-
-	// prepare views
-	loginFormPasskeyView := newView("auth/login/_form_passkey.html").addParams(params.toViewParams())
-	topIndexView := newView("top/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		loginFormPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthLoginPasskey(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthLoginPasskey failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-
 	// update login flow
 	updateLoginFlowResp, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:    "passkey",
-			CsrfToken: params.CsrfToken,
-			// Identifier:   params.Identifier,
-			PasskeyLogin: params.PasskeyLogin,
+			CsrfToken: reqParams.CsrfToken,
+			// Identifier:   reqParams.Identifier,
+			PasskeyLogin: reqParams.PasskeyLogin,
 		},
 	})
 	if err != nil {
-		loginFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -96,7 +113,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
-	topIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }

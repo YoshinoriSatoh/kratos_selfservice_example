@@ -60,40 +60,58 @@ func (params *postAuthRegistrationStepTwoOidcRequestParams) validate() *viewErro
 	return viewError
 }
 
+// Views
+type getAuthRegistrationStepTwoOidcViews struct {
+	form *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthRegistrationStepTwoOidc(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationStepTwoOidcRequestParams, getAuthRegistrationStepTwoOidcViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_REGISTRATION_DEFAULT",
+	}))
+	reqParams := newpostAuthRegistrationStepTwoOidcRequestParams(r)
+	views := getAuthRegistrationStepTwoOidcViews{
+		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthRegistrationStepTwoOidc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newpostAuthRegistrationStepTwoOidcRequestParams(r)
-
-	// prepare views
-	registrationFormOidc := newView("auth/registration/_form.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "oidc"})
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		registrationFormOidc.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepTwoOidc(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepTwoOidc failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
-	}))
-
 	// update Registration Flow
 	kratosResp, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: reqParams.CsrfToken,
 			Method:    "oidc",
-			Provider:  params.Provider,
-			Traits:    params.Traits,
+			Provider:  reqParams.Provider,
+			Traits:    reqParams.Traits,
 		},
 	})
 	if err != nil {
-		registrationFormOidc.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 

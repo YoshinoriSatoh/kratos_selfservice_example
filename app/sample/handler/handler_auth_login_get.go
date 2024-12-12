@@ -52,34 +52,51 @@ func (p *getAuthLoginRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthLoginViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthLogin(w http.ResponseWriter, r *http.Request) (*getAuthLoginRequestParams, getAuthLoginViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_LOGIN_DEFAULT",
+	}))
+	reqParams := newGetAuthLoginRequestParams(r)
+	views := getAuthLoginViews{
+		index: newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetAuthLoginRequestParams(r)
-
-	// prepare views
-	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		loginIndexView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthLogin(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthLogin failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-
 	// create or get registration Flow
 	var (
-		err                  error
 		loginFlow            kratos.LoginFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)
-	if params.FlowID == "" {
+	if reqParams.FlowID == "" {
 		var createLoginFlowResp kratos.CreateLoginFlowResponse
 		createLoginFlowResp, err = kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 			Header:  makeDefaultKratosRequestHeader(r),
@@ -91,14 +108,14 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 		var getLoginFlowResp kratos.GetLoginFlowResponse
 		getLoginFlowResp, err = kratos.GetLoginFlow(ctx, kratos.GetLoginFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
-			FlowID: params.FlowID,
+			FlowID: reqParams.FlowID,
 		})
 		kratosResponseHeader = getLoginFlowResp.Header
 		loginFlow = getLoginFlowResp.LoginFlow
 	}
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない
 	if err != nil && loginFlow.DuplicateIdentifier == "" {
-		loginIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -123,7 +140,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	addCookies(w, kratosResponseHeader.Cookie)
-	loginIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"LoginFlowID":        loginFlow.FlowID,
 		"Information":        information,
 		"CsrfToken":          loginFlow.CsrfToken,

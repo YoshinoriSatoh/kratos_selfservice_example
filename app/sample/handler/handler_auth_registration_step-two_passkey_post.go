@@ -61,41 +61,58 @@ func (params *postAuthRegistrationStepTwoPasskeyRequestParams) validate() *viewE
 	return viewError
 }
 
+// Views
+type getAuthRegistrationStepTwoPasskeyViews struct {
+	form *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthRegistrationStepTwoPasskey(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationStepTwoPasskeyRequestParams, getAuthRegistrationStepTwoPasskeyViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_REGISTRATION_DEFAULT",
+	}))
+	reqParams := newpostAuthRegistrationStepTwoPasskeyRequestParams(r)
+	views := getAuthRegistrationStepTwoPasskeyViews{
+		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "passkey"}),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthRegistrationStepTwoPasskey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newpostAuthRegistrationStepTwoPasskeyRequestParams(r)
-
-	// prepare views
-	registrationFormPasskeyView := newView("auth/registration/_form.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "passkey"})
-	loginIndexView := newView("auth/login/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		registrationFormPasskeyView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepTwoPasskey(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepTwoPasskey failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
-	}))
-
 	// Registration Flow 更新
 	kratosResp, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
-			CsrfToken:       params.CsrfToken,
+			CsrfToken:       reqParams.CsrfToken,
 			Method:          "passkey",
-			Traits:          params.Traits,
-			PasskeyRegister: params.PasskeyRegister,
+			Traits:          reqParams.Traits,
+			PasskeyRegister: reqParams.PasskeyRegister,
 		},
 	})
 	if err != nil && kratosResp.DuplicateIdentifier == "" {
-		registrationFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -127,12 +144,12 @@ func (p *Provider) handlePostAuthRegistrationStepTwoPasskey(w http.ResponseWrite
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())
-		registrationFormPasskeyView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 	addCookies(w, kratosResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-	loginIndexView.addParams(map[string]any{
+	newView("auth/login/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
 		"LoginFlowID":      createLoginFlowResp.LoginFlow.FlowID,
 		"Information":      information,
 		"CsrfToken":        createLoginFlowResp.LoginFlow.CsrfToken,

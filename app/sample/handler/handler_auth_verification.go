@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
@@ -84,8 +85,6 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	var err error
-
 	// collect rendering data and validate request parameters.
 	reqParams, views, baseViewError, err := prepareGetAuthVerification(w, r)
 	if err != nil {
@@ -94,26 +93,7 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	}
 
 	// create or get verification Flow
-	var (
-		verificationFlow     kratos.VerificationFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if reqParams.FlowID == "" {
-		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
-		createVerificatoinFlowResp, err = kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = createVerificatoinFlowResp.Header
-		verificationFlow = createVerificatoinFlowResp.VerificationFlow
-	} else {
-		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
-		getVerificatoinFlowResp, err = kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-			FlowID: reqParams.FlowID,
-		})
-		kratosResponseHeader = getVerificatoinFlowResp.Header
-		verificationFlow = getVerificatoinFlowResp.VerificationFlow
-	}
+	verificationFlow, kratosResponseHeader, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
@@ -121,6 +101,8 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 	views.index.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
@@ -192,27 +174,7 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	}))
 
 	// create or get verification Flow
-	var (
-		err                  error
-		verificationFlow     kratos.VerificationFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if params.FlowID == "" {
-		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
-		createVerificatoinFlowResp, err = kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = createVerificatoinFlowResp.Header
-		verificationFlow = createVerificatoinFlowResp.VerificationFlow
-	} else {
-		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
-		getVerificatoinFlowResp, err = kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-			FlowID: params.FlowID,
-		})
-		kratosResponseHeader = getVerificatoinFlowResp.Header
-		verificationFlow = getVerificatoinFlowResp.VerificationFlow
-	}
+	verificationFlow, kratosResponseHeader, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), params.FlowID)
 	if err != nil {
 		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
@@ -220,6 +182,8 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 	verificationCodeView.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,

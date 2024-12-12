@@ -1119,3 +1119,108 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 
 	return response, nil
 }
+
+// CreateOrGetLoginFlow handles the logic for creating or getting a login flow
+func CreateOrGetLoginFlow(ctx context.Context, h KratosRequestHeader, flowID string, refresh bool) (LoginFlow, KratosResponseHeader, error) {
+	var (
+		err                  error
+		loginFlow            LoginFlow
+		kratosResponseHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createLoginFlowResp CreateLoginFlowResponse
+		createLoginFlowResp, err = CreateLoginFlow(ctx, CreateLoginFlowRequest{
+			Header:  h,
+			Refresh: refresh,
+		})
+		kratosResponseHeader = createLoginFlowResp.Header
+		loginFlow = createLoginFlowResp.LoginFlow
+	} else {
+		var getLoginFlowResp GetLoginFlowResponse
+		getLoginFlowResp, err = GetLoginFlow(ctx, GetLoginFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosResponseHeader = getLoginFlowResp.Header
+		loginFlow = getLoginFlowResp.LoginFlow
+	}
+	return loginFlow, kratosResponseHeader, err
+}
+
+// CreateOrGetRecoveryFlow handles the logic for creating or getting a recovery flow
+func CreateOrGetRecoveryFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RecoveryFlow, KratosResponseHeader, error) {
+	var (
+		err                  error
+		recoveryFlow         RecoveryFlow
+		kratosResponseHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createRecoveryFlowResp CreateRecoveryFlowResponse
+		createRecoveryFlowResp, err = CreateRecoveryFlow(ctx, CreateRecoveryFlowRequest{
+			Header: h,
+		})
+		kratosResponseHeader = createRecoveryFlowResp.Header
+		recoveryFlow = createRecoveryFlowResp.RecoveryFlow
+	} else {
+		var getRecoveryFlowResp GetRecoveryFlowResponse
+		getRecoveryFlowResp, err = GetRecoveryFlow(ctx, GetRecoveryFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosResponseHeader = getRecoveryFlowResp.Header
+		recoveryFlow = getRecoveryFlowResp.RecoveryFlow
+	}
+	return recoveryFlow, kratosResponseHeader, err
+}
+
+// CreateOrGetSettingsFlow handles the logic for creating or getting a settings flow
+func CreateOrGetSettingsFlow(ctx context.Context, h KratosRequestHeader, flowID string) (SettingsFlow, KratosResponseHeader, error) {
+	var (
+		err                  error
+		settingsFlow         SettingsFlow
+		kratosResponseHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createSettingsFlowResp CreateSettingsFlowResponse
+		createSettingsFlowResp, err = CreateSettingsFlow(ctx, CreateSettingsFlowRequest{
+			Header: h,
+		})
+		kratosResponseHeader = createSettingsFlowResp.Header
+		settingsFlow = createSettingsFlowResp.SettingsFlow
+	} else {
+		var getSettingsFlowResp GetSettingsFlowResponse
+		getSettingsFlowResp, err = GetSettingsFlow(ctx, GetSettingsFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosResponseHeader = getSettingsFlowResp.Header
+		settingsFlow = getSettingsFlowResp.SettingsFlow
+	}
+	return settingsFlow, kratosResponseHeader, err
+}
+
+// CreateOrGetVerificationFlow handles the logic for creating or getting a verification flow
+func CreateOrGetVerificationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (VerificationFlow, KratosResponseHeader, error) {
+	var (
+		err                  error
+		verificationFlow     VerificationFlow
+		kratosResponseHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createVerificationFlowResp CreateVerificationFlowResponse
+		createVerificationFlowResp, err = CreateVerificationFlow(ctx, CreateVerificationFlowRequest{
+			Header: h,
+		})
+		kratosResponseHeader = createVerificationFlowResp.Header
+		verificationFlow = createVerificationFlowResp.VerificationFlow
+	} else {
+		var getVerificationFlowResp GetVerificationFlowResponse
+		getVerificationFlowResp, err = GetVerificationFlow(ctx, GetVerificationFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosResponseHeader = getVerificationFlowResp.Header
+		verificationFlow = getVerificationFlowResp.VerificationFlow
+	}
+	return verificationFlow, kratosResponseHeader, err
+}

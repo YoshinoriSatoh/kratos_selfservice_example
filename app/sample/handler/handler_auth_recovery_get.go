@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
@@ -83,8 +84,6 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	var err error
-
 	// collect rendering data and validate request parameters.
 	reqParams, views, baseViewError, err := prepareGetAuthRecovery(w, r)
 	if err != nil {
@@ -93,33 +92,18 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	}
 
 	// create or get recovery Flow
-	var (
-		recoveryFlow         kratos.RecoveryFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if reqParams.FlowID == "" {
-		var createRecoveryFlowResp kratos.CreateRecoveryFlowResponse
-		createRecoveryFlowResp, err = kratos.CreateRecoveryFlow(ctx, kratos.CreateRecoveryFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = createRecoveryFlowResp.Header
-		recoveryFlow = createRecoveryFlowResp.RecoveryFlow
-	} else {
-		var getRecoveryFlowResp kratos.GetRecoveryFlowResponse
-		getRecoveryFlowResp, err = kratos.GetRecoveryFlow(ctx, kratos.GetRecoveryFlowRequest{
-			FlowID: reqParams.FlowID,
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = getRecoveryFlowResp.Header
-		recoveryFlow = getRecoveryFlowResp.RecoveryFlow
-	}
+	recoveryFlow, kratosResponseHeader, err := kratos.CreateOrGetRecoveryFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// render page
+	// add cookies to the request header
 	addCookies(w, kratosResponseHeader.Cookie)
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
+
+	// render page
 	views.index.addParams(map[string]any{
 		"RecoveryFlowID": recoveryFlow.FlowID,
 		"CsrfToken":      recoveryFlow.CsrfToken,

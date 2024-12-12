@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
-
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
@@ -94,27 +94,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create or get registration Flow
-	var (
-		loginFlow            kratos.LoginFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if reqParams.FlowID == "" {
-		var createLoginFlowResp kratos.CreateLoginFlowResponse
-		createLoginFlowResp, err = kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-			Header:  makeDefaultKratosRequestHeader(r),
-			Refresh: isAuthenticated(session),
-		})
-		kratosResponseHeader = createLoginFlowResp.Header
-		loginFlow = createLoginFlowResp.LoginFlow
-	} else {
-		var getLoginFlowResp kratos.GetLoginFlowResponse
-		getLoginFlowResp, err = kratos.GetLoginFlow(ctx, kratos.GetLoginFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-			FlowID: reqParams.FlowID,
-		})
-		kratosResponseHeader = getLoginFlowResp.Header
-		loginFlow = getLoginFlowResp.LoginFlow
-	}
+	loginFlow, kratosResponseHeader, err := kratos.CreateOrGetLoginFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID, isAuthenticated(session))
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない
 	if err != nil && loginFlow.DuplicateIdentifier == "" {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
@@ -142,6 +122,8 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	addCookies(w, kratosResponseHeader.Cookie)
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 	views.index.addParams(map[string]any{
 		"LoginFlowID":        loginFlow.FlowID,
 		"Information":        information,

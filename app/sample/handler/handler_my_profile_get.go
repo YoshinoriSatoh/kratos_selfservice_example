@@ -61,26 +61,44 @@ func (p *getMyProfileRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getMyProfileViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetMyProfile(w http.ResponseWriter, r *http.Request) (*getMyProfileRequestParams, getMyProfileViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
+	}))
+	reqParams := newGetMyProfileRequestParams(r)
+	views := getMyProfileViews{
+		index: newView("my/profile/index.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetMyProfileRequestParams(r)
-
-	// prepare views
-	myProfileIndexView := newView("my/profile/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		myProfileIndexView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetMyProfile(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetMyProfile failed", "err", err)
 		return
 	}
-
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-	}))
 
 	// create or get settings Flow
 	var (
@@ -88,7 +106,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 		settingsFlow         kratos.SettingsFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)
-	if params.FlowID == "" {
+	if reqParams.FlowID == "" {
 		var createSettingsFlowResp kratos.CreateSettingsFlowResponse
 		createSettingsFlowResp, err = kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
@@ -98,43 +116,38 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var getSettingsFlowResp kratos.GetSettingsFlowResponse
 		getSettingsFlowResp, err = kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-			FlowID: params.FlowID,
+			FlowID: reqParams.FlowID,
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		kratosResponseHeader = getSettingsFlowResp.Header
 		settingsFlow = getSettingsFlowResp.SettingsFlow
 	}
 	if err != nil {
-		myProfileIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
-	// var information string
-	// if existsAfterLoginHook(r, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE) {
-	// 	information = "プロフィールを更新しました。"
-	// 	deleteAfterLoginHook(w, AFTER_LOGIN_HOOK_COOKIE_KEY_SETTINGS_PROFILE_UPDATE)
-	// }
 	year, month, day := parseDate(session.Identity.Traits.Birthdate)
 	addCookies(w, kratosResponseHeader.Cookie)
 
 	email := session.Identity.Traits.Email
-	if params.SavedEmail != "" {
-		email = params.SavedEmail
+	if reqParams.SavedEmail != "" {
+		email = reqParams.SavedEmail
 	}
 	firstname := session.Identity.Traits.Firstname
-	if params.SavedFirstname != "" {
-		firstname = params.SavedFirstname
+	if reqParams.SavedFirstname != "" {
+		firstname = reqParams.SavedFirstname
 	}
 	lastname := session.Identity.Traits.Lastname
-	if params.SavedLastname != "" {
-		lastname = params.SavedLastname
+	if reqParams.SavedLastname != "" {
+		lastname = reqParams.SavedLastname
 	}
 	nickname := session.Identity.Traits.Nickname
-	if params.SavedNickname != "" {
-		nickname = params.SavedNickname
+	if reqParams.SavedNickname != "" {
+		nickname = reqParams.SavedNickname
 	}
-	myProfileIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
 		"Email":          email,
@@ -144,6 +157,5 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 		"BirthdateYear":  year,
 		"BirthdateMonth": month,
 		"BirthdateDay":   day,
-		// "Information":    information,
 	}).render(w, r, session)
 }

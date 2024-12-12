@@ -67,42 +67,61 @@ func (params *postAuthRegistrationStepOneRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthRegistrationStepOneViews struct {
+	form *view
+	code *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthRegistrationStepOne(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationStepOneRequestParams, getAuthRegistrationStepOneViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_REGISTRATION_DEFAULT",
+	}))
+	reqParams := newPostAuthRegistrationStepOneRequestParams(r)
+	views := getAuthRegistrationStepOneViews{
+		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "password"}),
+		code: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 // POST /auth/registration
 func (p *Provider) handlePostAuthRegistrationStepOne(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAuthRegistrationStepOneRequestParams(r)
-
-	// prepare views
-	registrationFormView := newView("auth/registration/_form.html").addParams(params.toViewParams()).addParams(map[string]any{"Method": "password"})
-	verificationCodeView := newView("auth/verification/code.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		registrationFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepOne(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepOne failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_REGISTRATION_DEFAULT",
-	}))
-
 	// update Registration Flow
 	updateRegistrationFlowResp, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: reqParams.CsrfToken,
 			Method:    "password",
-			Traits:    params.Traits,
+			Traits:    reqParams.Traits,
 		},
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "update registration error", "err", err.Error())
-		registrationFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -117,14 +136,14 @@ func (p *Provider) handlePostAuthRegistrationStepOne(w http.ResponseWriter, r *h
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "get verification error", "err", err.Error())
-		registrationFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render verification code page (replace <body> tag and push url)
 	addCookies(w, getVerificationFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
-	verificationCodeView.addParams(map[string]any{
+	views.code.addParams(map[string]any{
 		"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
 		"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
 		"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),

@@ -49,41 +49,61 @@ func (params *postAuthRecoveryCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthRecoveryCodeViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthRecoveryCode(w http.ResponseWriter, r *http.Request) (*postAuthRecoveryCodeRequestParams, getAuthRecoveryCodeViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_RECOVERY_DEFAULT",
+	}))
+	reqParams := newPostAutRecoveryCodeRequestParams(r)
+	views := getAuthRecoveryCodeViews{
+		index: newView("auth/recovery/_code_form.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAutRecoveryCodeRequestParams(r)
-
-	// prepare views
-	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
-	myPasswordIndexView := newView("my/password/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthRecoveryCode(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthRecoveryCode failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_RECOVERY_DEFAULT",
-	}))
+	// prepare views
+	myPasswordIndexView := newView("my/password/index.html").addParams(reqParams.toViewParams())
 
 	// Recovery Flow 更新
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 	kratosResp, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: kratosRequestHeader,
 		Body: kratos.UpdateRecoveryFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: reqParams.CsrfToken,
 			Method:    "code",
-			Code:      params.Code,
+			Code:      reqParams.Code,
 		},
 	})
 	if err != nil {
-		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -98,7 +118,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 			Header: kratosRequestHeader,
 		})
 		if err != nil {
-			recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 		addCookies(w, getSettingsFlowResp.Header.Cookie)

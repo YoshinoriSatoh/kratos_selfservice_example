@@ -49,26 +49,44 @@ func (p *getAuthRecoveryRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthRecoveryViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthRecovery(w http.ResponseWriter, r *http.Request) (*getAuthRecoveryRequestParams, getAuthRecoveryViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_RECOVERY_DEFAULT",
+	}))
+	reqParams := newGetAuthRecoveryRequestParams(r)
+	views := getAuthRecoveryViews{
+		index: newView("auth/recovery/index.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetAuthRecoveryRequestParams(r)
-
-	// prepare views
-	recoveryIndexView := newView("auth/recovery/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		recoveryIndexView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthRecovery(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthRecovery failed", "err", err)
 		return
 	}
-
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_RECOVERY_DEFAULT",
-	}))
 
 	// create or get recovery Flow
 	var (
@@ -76,7 +94,7 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 		recoveryFlow         kratos.RecoveryFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)
-	if params.FlowID == "" {
+	if reqParams.FlowID == "" {
 		var createRecoveryFlowResp kratos.CreateRecoveryFlowResponse
 		createRecoveryFlowResp, err = kratos.CreateRecoveryFlow(ctx, kratos.CreateRecoveryFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
@@ -86,20 +104,20 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 	} else {
 		var getRecoveryFlowResp kratos.GetRecoveryFlowResponse
 		getRecoveryFlowResp, err = kratos.GetRecoveryFlow(ctx, kratos.GetRecoveryFlowRequest{
-			FlowID: params.FlowID,
+			FlowID: reqParams.FlowID,
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		kratosResponseHeader = getRecoveryFlowResp.Header
 		recoveryFlow = getRecoveryFlowResp.RecoveryFlow
 	}
 	if err != nil {
-		recoveryIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
-	recoveryIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"RecoveryFlowID": recoveryFlow.FlowID,
 		"CsrfToken":      recoveryFlow.CsrfToken,
 	}).render(w, r, session)

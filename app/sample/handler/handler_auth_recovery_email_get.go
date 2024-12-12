@@ -47,40 +47,57 @@ func (params *postAuthRecoveryEmailRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthRecoveryEmailViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthRecoveryEmail(w http.ResponseWriter, r *http.Request) (*postAuthRecoveryEmailRequestParams, getAuthRecoveryEmailViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_RECOVERY_DEFAULT",
+	}))
+	reqParams := newPostAutRecoveryEmailRequestParams(r)
+	views := getAuthRecoveryEmailViews{
+		index: newView("auth/recovery/_email_form.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAutRecoveryEmailRequestParams(r)
-
-	// prepare views
-	recoveryEmailFormView := newView("auth/recovery/_email_form.html").addParams(params.toViewParams())
-	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		recoveryEmailFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthRecoveryEmail(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthRecoveryEmail failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_RECOVERY_DEFAULT",
-	}))
-
 	// update Recovery flow
 	kratosResp, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRecoveryFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: reqParams.CsrfToken,
 			Method:    "code",
-			Email:     params.Email,
+			Email:     reqParams.Email,
 		},
 	})
 	if err != nil {
-		recoveryEmailFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 	addCookies(w, kratosResp.Header.Cookie)
@@ -91,10 +108,10 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	}
 
 	// render
-	recoveryCodeFormView.addParams(map[string]any{
-		"RecoveryFlowID":           params.FlowID,
-		"CsrfToken":                params.CsrfToken,
-		"Email":                    params.Email,
+	views.index.addParams(map[string]any{
+		"RecoveryFlowID":           reqParams.FlowID,
+		"CsrfToken":                reqParams.CsrfToken,
+		"Email":                    reqParams.Email,
 		"ShowRecoveryAnnouncement": true,
 	}).render(w, r, session)
 }

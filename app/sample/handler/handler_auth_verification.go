@@ -51,27 +51,45 @@ func (p *getAuthVerificationRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthVerificationViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthVerification(w http.ResponseWriter, r *http.Request) (*getAuthVerificationRequestParams, getAuthVerificationViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_VERIFICATION_DEFAULT",
+	}))
+	reqParams := newGetAuthVerificationRequestParams(r)
+	views := getAuthVerificationViews{
+		index: newView("auth/verification/index.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 // Handler GET /auth/verification
 func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetAuthVerificationRequestParams(r)
-
-	// prepare views
-	verificationIndexView := newView("auth/verification/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		verificationIndexView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthVerification(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthVerification failed", "err", err)
 		return
 	}
-
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_VERIFICATION_DEDAULT",
-	}))
 
 	// create or get verification Flow
 	var (
@@ -79,7 +97,7 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 		verificationFlow     kratos.VerificationFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)
-	if params.FlowID == "" {
+	if reqParams.FlowID == "" {
 		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
 		createVerificatoinFlowResp, err = kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
@@ -90,19 +108,19 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
 		getVerificatoinFlowResp, err = kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
-			FlowID: params.FlowID,
+			FlowID: reqParams.FlowID,
 		})
 		kratosResponseHeader = getVerificatoinFlowResp.Header
 		verificationFlow = getVerificatoinFlowResp.VerificationFlow
 	}
 	if err != nil {
-		verificationIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
-	verificationIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
 		"IsUsedFlow":         verificationFlow.IsUsedFlow,

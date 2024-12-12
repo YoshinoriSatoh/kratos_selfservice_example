@@ -51,26 +51,44 @@ func (p *getMyPasswordRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getMyPasswordViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetMyPassword(w http.ResponseWriter, r *http.Request) (*getMyPasswordRequestParams, getMyPasswordViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
+	}))
+	reqParams := newGetMyPasswordRequestParams(r)
+	views := getMyPasswordViews{
+		index: newView("my/password/index.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetMyPasswordRequestParams(r)
-
-	// prepare views
-	myPasswordIndexView := newView("my/password/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		myPasswordIndexView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetMyPassword(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetMyPassword failed", "err", err)
 		return
 	}
-
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-	}))
 
 	// create or get settings Flow
 	var (
@@ -78,7 +96,7 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 		settingsFlow         kratos.SettingsFlow
 		kratosResponseHeader kratos.KratosResponseHeader
 	)
-	if params.FlowID == "" {
+	if reqParams.FlowID == "" {
 		var createSettingsFlowResp kratos.CreateSettingsFlowResponse
 		createSettingsFlowResp, err = kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
@@ -88,20 +106,20 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var getSettingsFlowResp kratos.GetSettingsFlowResponse
 		getSettingsFlowResp, err = kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-			FlowID: params.FlowID,
+			FlowID: reqParams.FlowID,
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		kratosResponseHeader = getSettingsFlowResp.Header
 		settingsFlow = getSettingsFlowResp.SettingsFlow
 	}
 	if err != nil {
-		myPasswordIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
-	myPasswordIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
 	}).render(w, r, session)

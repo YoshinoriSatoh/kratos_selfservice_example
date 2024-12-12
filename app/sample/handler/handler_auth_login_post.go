@@ -58,51 +58,70 @@ func (params *postAuthLoginRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthLoginPostViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthLoginPost(w http.ResponseWriter, r *http.Request) (*postAuthLoginRequestParams, getAuthLoginPostViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_LOGIN_DEFAULT",
+	}))
+	reqParams := newPostAuthLoginRequestParams(r)
+	views := getAuthLoginPostViews{
+		index: newView("auth/login/_form.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAuthLoginRequestParams(r)
-
-	// prepare views
-	loginFormView := newView("auth/login/_form.html").addParams(params.toViewParams())
-	topIndexView := newView("top/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		slog.ErrorContext(ctx, "validation error", "viewError", viewError)
-		loginFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthLoginPost(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthLoginPost failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
+	// prepare views
+	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
 	// update login flow
 	updateLoginFlowResp, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:     "password",
-			CsrfToken:  params.CsrfToken,
-			Identifier: params.Identifier,
-			Password:   params.Password,
+			CsrfToken:  reqParams.CsrfToken,
+			Identifier: reqParams.Identifier,
+			Password:   reqParams.Password,
 		},
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
-		loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// update session
 	session = &updateLoginFlowResp.Session
 
-	if params.Hook != "" {
-		h := hookFromQueryParam(params.Hook)
+	if reqParams.Hook != "" {
+		h := hookFromQueryParam(reqParams.Hook)
 		if h.HookID == HookIDUpdateSettingsProfile {
 			kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateLoginFlowResp.Header.Cookie)
@@ -110,13 +129,13 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				FlowID: h.UpdateSettingsProfileParams.FlowID,
 				Header: kratosRequestHeader,
 				Body: kratos.UpdateSettingsFlowRequestBody{
-					CsrfToken: params.CsrfToken,
+					CsrfToken: reqParams.CsrfToken,
 					Method:    "profile",
 					Traits:    h.UpdateSettingsProfileParams.Traits,
 				},
 			})
 			if err != nil {
-				loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 				return
 			}
 			if kratosResp.VerificationFlowID != "" {
@@ -131,7 +150,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				})
 				if err != nil {
 					slog.DebugContext(ctx, "get verification error", "err", err.Error())
-					loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 					return
 				}
 
@@ -143,7 +162,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 					Header: makeDefaultKratosRequestHeader(r),
 				})
 				if err != nil {
-					loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 					return
 				}
 
@@ -165,7 +184,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				// render verification code page (replace <body> tag and push url)
 				addCookies(w, getVerificationFlowResp.Header.Cookie)
 				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
-				newView("auth/verification/code.html").addParams(params.toViewParams()).addParams(map[string]any{
+				newView("auth/verification/code.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
 					"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
 					"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
 					"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
@@ -181,7 +200,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				Header: makeDefaultKratosRequestHeader(r),
 			})
 			if err != nil {
-				loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+				views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 				return
 			}
 			year, month, day := parseDate(h.UpdateSettingsProfileParams.Traits.Birthdate)
@@ -203,10 +222,10 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if params.Render != "" {
-		v := viewFromQueryParam(params.Render)
+	if reqParams.Render != "" {
+		v := viewFromQueryParam(reqParams.Render)
 		setHeadersForReplaceBody(w, v.Path)
-		viewFromQueryParam(params.Render).render(w, r, session)
+		viewFromQueryParam(reqParams.Render).render(w, r, session)
 		return
 	}
 

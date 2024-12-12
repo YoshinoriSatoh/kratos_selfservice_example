@@ -47,40 +47,57 @@ func (params *postAuthLoginOidcRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthLoginOidcViews struct {
+	index *view
+}
+
+// collect rendering data and validate request parameters.
+func prepareGetAuthLoginOidc(w http.ResponseWriter, r *http.Request) (*postAuthLoginOidcRequestParams, getAuthLoginOidcViews, *viewError, error) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_LOGIN_DEFAULT",
+	}))
+	reqParams := newPostAuthLoginOidcRequestParams(r)
+	views := getAuthLoginOidcViews{
+		index: newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+	}
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
+	}
+
+	return reqParams, views, baseViewError, nil
+}
+
 func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostAuthLoginOidcRequestParams(r)
-
-	// prepare views
-	loginFormView := newView("auth/login/_form.html").addParams(params.toViewParams())
-	topIndexView := newView("top/index.html").addParams(params.toViewParams())
-
-	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		loginFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// collect rendering data and validate request parameters.
+	reqParams, views, baseViewError, err := prepareGetAuthLoginOidc(w, r)
+	if err != nil {
+		slog.ErrorContext(ctx, "prepareGetAuthLoginOidc failed", "err", err)
 		return
 	}
 
-	// base view error
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-
 	// update login flow
 	updateLoginFlowResp, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:    "oidc",
-			CsrfToken: params.CsrfToken,
-			Provider:  params.Provider,
+			CsrfToken: reqParams.CsrfToken,
+			Provider:  reqParams.Provider,
 		},
 	})
 	if err != nil {
-		loginFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -96,7 +113,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 
 	// render
 	setHeadersForReplaceBody(w, "/")
-	topIndexView.addParams(map[string]any{
+	views.index.addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }

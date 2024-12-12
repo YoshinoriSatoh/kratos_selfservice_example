@@ -99,7 +99,7 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 	// prepare views
 	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
-	kratosResp, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+	kratosResp, _, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateSettingsFlowRequestBody{

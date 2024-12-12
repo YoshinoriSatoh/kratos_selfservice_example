@@ -101,7 +101,7 @@ func (p *Provider) handlePostAuthRegistrationStepTwoOidc(w http.ResponseWriter, 
 	}
 
 	// update Registration Flow
-	kratosResp, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+	kratosResp, _, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
@@ -100,21 +99,18 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-
 	// create or get registration Flow
-	registrationFlow, kratosResponseHeader, err := kratos.KratosCreateOrGetRegistrationFlow(ctx, kratosRequestHeader, reqParams.FlowID)
+	registrationFlow, kratosRespHeader, kratosReqHeaderForNext, err := kratos.KratosCreateOrGetRegistrationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.password.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 
 	// Update identity when user already registered with the same credential of provided the oidc provider.
 	if registrationFlow.CredentialType == kratos.CredentialsTypeOidc {
-		kratosUpdateRegistrationFlowResp, err := kratos.KratosLinkIdentityIfExists(ctx, kratos.KratosLinkIdentityIfExistsRequest{
+		kratosUpdateRegistrationFlowResp, _, err := kratos.KratosLinkIdentityIfExists(ctx, kratos.KratosLinkIdentityIfExistsRequest{
 			ID:            registrationFlow.Traits.Email,
-			RequestHeader: kratosRequestHeader,
+			RequestHeader: kratosReqHeaderForNext,
 		})
 		if err != nil {
 			slog.Error("Kratos.LinkIdentityIfExists failed", "error", err)
@@ -135,7 +131,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	// render page
 	switch registrationFlow.CredentialType {
 	case kratos.CredentialsTypePassword:
-		addCookies(w, kratosResponseHeader.Cookie)
+		addCookies(w, kratosRespHeader.Cookie)
 		setHeadersForReplaceBody(w, "/auth/registration")
 		if reqParams.PasskeyRegistration {
 			views.passkey.addParams(map[string]any{
@@ -151,7 +147,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 			}).render(w, r, session)
 		}
 	case kratos.CredentialsTypeOidc:
-		addCookies(w, kratosResponseHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
+		addCookies(w, kratosRespHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
 		views.oidc.addParams(map[string]any{
 			"RegistrationFlowID": registrationFlow.FlowID,
 			"CsrfToken":          registrationFlow.CsrfToken,

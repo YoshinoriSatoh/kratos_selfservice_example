@@ -103,34 +103,17 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create or get settings Flow
-	var (
-		settingsFlow         kratos.SettingsFlow
-		kratosResponseHeader kratos.KratosResponseHeader
-	)
-	if reqParams.FlowID == "" {
-		var createSettingsFlowResp kratos.CreateSettingsFlowResponse
-		createSettingsFlowResp, err = kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = createSettingsFlowResp.Header
-		settingsFlow = createSettingsFlowResp.SettingsFlow
-	} else {
-		var getSettingsFlowResp kratos.GetSettingsFlowResponse
-		getSettingsFlowResp, err = kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-			FlowID: reqParams.FlowID,
-			Header: makeDefaultKratosRequestHeader(r),
-		})
-		kratosResponseHeader = getSettingsFlowResp.Header
-		settingsFlow = getSettingsFlowResp.SettingsFlow
-	}
+	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
+	// add cookies to the request header
+	addCookies(w, kratosResponseHeader.Cookie)
+
 	// render page
 	year, month, day := parseDate(session.Identity.Traits.Birthdate)
-	addCookies(w, kratosResponseHeader.Cookie)
 
 	email := session.Identity.Traits.Email
 	if reqParams.SavedEmail != "" {

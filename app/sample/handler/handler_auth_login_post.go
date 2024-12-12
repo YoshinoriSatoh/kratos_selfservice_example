@@ -100,7 +100,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// update login flow
-	updateLoginFlowResp, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateLoginFlowRequestBody{
@@ -122,11 +122,9 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if reqParams.Hook != "" {
 		h := hookFromQueryParam(reqParams.Hook)
 		if h.HookID == HookIDUpdateSettingsProfile {
-			kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-			kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateLoginFlowResp.Header.Cookie)
-			kratosResp, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+			kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 				FlowID: h.UpdateSettingsProfileParams.FlowID,
-				Header: kratosRequestHeader,
+				Header: kratosReqHeaderForNext,
 				Body: kratos.UpdateSettingsFlowRequestBody{
 					CsrfToken: reqParams.CsrfToken,
 					Method:    "profile",
@@ -138,14 +136,10 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if kratosResp.VerificationFlowID != "" {
-				// transition to verification flow from settings flow
-				// Transferring cookies from update registration flow response
-				kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-				kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 				// get verification flow
-				getVerificationFlowResp, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+				getVerificationFlowResp, _, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 					FlowID: kratosResp.VerificationFlowID,
-					Header: kratosRequestHeader,
+					Header: kratosReqHeaderForNext,
 				})
 				if err != nil {
 					slog.DebugContext(ctx, "get verification error", "err", err.Error())
@@ -154,10 +148,10 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				}
 
 				whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-					Header: kratosRequestHeader,
+					Header: kratosReqHeaderForNext,
 				})
 
-				createSettingsFlowResp, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+				createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
 					Header: makeDefaultKratosRequestHeader(r),
 				})
 				if err != nil {
@@ -192,10 +186,10 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-				Header: kratosRequestHeader,
+				Header: kratosReqHeaderForNext,
 			})
 
-			createSettingsFlowResp, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
 				Header: makeDefaultKratosRequestHeader(r),
 			})
 			if err != nil {

@@ -110,7 +110,7 @@ func (p *Provider) handlePostAuthRegistrationStepOne(w http.ResponseWriter, r *h
 	}
 
 	// update Registration Flow
-	updateRegistrationFlowResp, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+	updateRegistrationFlowResp, kratosReqHeaderForNext, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
@@ -125,14 +125,10 @@ func (p *Provider) handlePostAuthRegistrationStepOne(w http.ResponseWriter, r *h
 		return
 	}
 
-	// transition to verification flow from registration flow
-	// Transferring cookies from update registration flow response
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateRegistrationFlowResp.Header.Cookie)
 	// get verification flow
-	getVerificationFlowResp, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+	getVerificationFlowResp, kratosReqHeaderForNext, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 		FlowID: updateRegistrationFlowResp.VerificationFlowID,
-		Header: kratosRequestHeader,
+		Header: kratosReqHeaderForNext,
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "get verification error", "err", err.Error())

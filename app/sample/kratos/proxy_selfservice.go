@@ -34,29 +34,30 @@ const (
 // --------------------------------------------------------------------------
 // Create or Get Registration Flow
 // --------------------------------------------------------------------------
-func KratosCreateOrGetRegistrationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RegistrationFlow, KratosResponseHeader, error) {
+func KratosCreateOrGetRegistrationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RegistrationFlow, KratosResponseHeader, KratosRequestHeader, error) {
 	var (
-		err                  error
-		registrationFlow     RegistrationFlow
-		kratosResponseHeader KratosResponseHeader
+		err              error
+		registrationFlow RegistrationFlow
+		kratosReqHeader  KratosRequestHeader
+		kratosRespHeader KratosResponseHeader
 	)
 	if flowID == "" {
 		var createRegistrationFlowResp CreateRegistrationFlowResponse
-		createRegistrationFlowResp, err = CreateRegistrationFlow(ctx, CreateRegistrationFlowRequest{
+		createRegistrationFlowResp, kratosReqHeader, err = CreateRegistrationFlow(ctx, CreateRegistrationFlowRequest{
 			Header: h,
 		})
-		kratosResponseHeader = createRegistrationFlowResp.Header
+		kratosRespHeader = createRegistrationFlowResp.Header
 		registrationFlow = createRegistrationFlowResp.RegistrationFlow
 	} else {
 		var getRegistrationFlowResp GetRegistrationFlowResponse
-		getRegistrationFlowResp, err = GetRegistrationFlow(ctx, GetRegistrationFlowRequest{
+		getRegistrationFlowResp, kratosReqHeader, err = GetRegistrationFlow(ctx, GetRegistrationFlowRequest{
 			FlowID: flowID,
 			Header: h,
 		})
-		kratosResponseHeader = getRegistrationFlowResp.Header
+		kratosRespHeader = getRegistrationFlowResp.Header
 		registrationFlow = getRegistrationFlowResp.RegistrationFlow
 	}
-	return registrationFlow, kratosResponseHeader, err
+	return registrationFlow, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -79,23 +80,23 @@ type kratosGetRegisrationFlowRespnseBody struct {
 	RequestUrl string `json:"request_url"` // flow完了前はrequest_urlから判定する
 }
 
-func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (GetRegistrationFlowResponse, error) {
+func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (GetRegistrationFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_REGISTRATION_FLOW, r.FlowID),
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "GetRegistrationFlow", "requestKratosPublic error", err)
-		return GetRegistrationFlowResponse{}, err
+		return GetRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosGetRegisrationFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetRegistrationFlow", "json unmarshal error", err)
-		return GetRegistrationFlowResponse{}, err
+		return GetRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -127,7 +128,7 @@ func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (Get
 		response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -151,23 +152,23 @@ type kratosCreateRegisrationFlowRespnseBody struct {
 	RequestUrl string `json:"request_url"` // flow完了前はrequest_urlから判定する
 }
 
-func CreateRegistrationFlow(ctx context.Context, r CreateRegistrationFlowRequest) (CreateRegistrationFlowResponse, error) {
+func CreateRegistrationFlow(ctx context.Context, r CreateRegistrationFlowRequest) (CreateRegistrationFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SELF_SERVICE_CREATE_REGISTRATION_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "CreateRegistrationFlow", "requestKratosPublic error", err)
-		return CreateRegistrationFlowResponse{}, err
+		return CreateRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosCreateRegisrationFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, err.Error())
-		return CreateRegistrationFlowResponse{}, err
+		return CreateRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -196,7 +197,7 @@ func CreateRegistrationFlow(ctx context.Context, r CreateRegistrationFlowRequest
 	response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
 	// }
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -235,37 +236,38 @@ type kratosUpdateRegisrationFlowBadRequestRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest) (UpdateRegistrationFlowResponse, error) {
+func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest) (UpdateRegistrationFlowResponse, KratosRequestHeader, error) {
 	// valiate parameter
 	if r.Body.Method == "password" {
 		if r.Body.Password == "" {
-			return UpdateRegistrationFlowResponse{}, errors.New("missing password in body")
+			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("missing password in body")
 		}
 	} else if r.Body.Method == "oidc" {
 		if r.Body.Provider == "" {
-			return UpdateRegistrationFlowResponse{}, errors.New("missing provider in body")
+			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("missing provider in body")
 		}
 	} else if r.Body.Method == "passkey" {
 		if r.Body.PasskeyRegister == "" {
-			return UpdateRegistrationFlowResponse{}, errors.New("missing passkey register in body")
+			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("missing passkey register in body")
 		}
 	} else {
 		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "Method", r.Body.Method)
-		return UpdateRegistrationFlowResponse{}, fmt.Errorf("invalid method: %s", r.Body.Method)
+		return UpdateRegistrationFlowResponse{}, r.Header, fmt.Errorf("invalid method: %s", r.Body.Method)
 	}
 
 	// Request to kratos
 	bodyBytes, err := json.Marshal(r.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
-		return UpdateRegistrationFlowResponse{}, err
+		return UpdateRegistrationFlowResponse{}, r.Header, err
 	}
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW, r.FlowID),
 		BodyBytes: bodyBytes,
 		Header:    r.Header,
 	})
+
 	var redirectBrowserTo string
 	var duplicateIdentifier string
 	if err != nil {
@@ -276,12 +278,12 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 			var kratosRespBadRequestBody kratosUpdateRegisrationFlowBadRequestRespnseBody
 			if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBadRequestBody); err != nil {
 				slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
-				return UpdateRegistrationFlowResponse{}, err
+				return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 			}
 			duplicateIdentifier = getDuplicateIdentifierFromUi(kratosRespBadRequestBody.Ui)
 		} else {
 			slog.ErrorContext(ctx, "UpdateRegistrationFlow", "requestKratosPublic error", err)
-			return UpdateRegistrationFlowResponse{}, err
+			return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, nil
 		}
 	}
 
@@ -289,7 +291,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 	var kratosRespBody kratosUpdateRegisrationFlowPasswordRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
-		return UpdateRegistrationFlowResponse{}, err
+		return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, nil
 	}
 
 	// Create response
@@ -304,7 +306,37 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 		}
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
+}
+
+// --------------------------------------------------------------------------
+// Create or Get Verification Flow
+// --------------------------------------------------------------------------
+// CreateOrGetVerificationFlow handles the logic for creating or getting a verification flow
+func CreateOrGetVerificationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (VerificationFlow, KratosResponseHeader, KratosRequestHeader, error) {
+	var (
+		err              error
+		verificationFlow VerificationFlow
+		kratosReqHeader  KratosRequestHeader
+		kratosRespHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createVerificationFlowResp CreateVerificationFlowResponse
+		createVerificationFlowResp, kratosReqHeader, err = CreateVerificationFlow(ctx, CreateVerificationFlowRequest{
+			Header: h,
+		})
+		kratosRespHeader = createVerificationFlowResp.Header
+		verificationFlow = createVerificationFlowResp.VerificationFlow
+	} else {
+		var getVerificationFlowResp GetVerificationFlowResponse
+		getVerificationFlowResp, kratosReqHeader, err = GetVerificationFlow(ctx, GetVerificationFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosRespHeader = getVerificationFlowResp.Header
+		verificationFlow = getVerificationFlowResp.VerificationFlow
+	}
+	return verificationFlow, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -326,23 +358,23 @@ type kratosGetVerificationFlowRespnseBody struct {
 	State string      `json:"state"`
 }
 
-func GetVerificationFlow(ctx context.Context, r GetVerificationFlowRequest) (GetVerificationFlowResponse, error) {
+func GetVerificationFlow(ctx context.Context, r GetVerificationFlowRequest) (GetVerificationFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_VERIFICATION_FLOW, r.FlowID),
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "GetVerificationFlow", "requestKratosPublic error", err)
-		return GetVerificationFlowResponse{}, err
+		return GetVerificationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosGetVerificationFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetVerificationFlow", "json unmarshal error", err)
-		return GetVerificationFlowResponse{}, err
+		return GetVerificationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -358,7 +390,7 @@ func GetVerificationFlow(ctx context.Context, r GetVerificationFlowRequest) (Get
 	// 	verificationFlow.IsUsedFlow = true
 	// }
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -380,23 +412,23 @@ type kratosCreateVerificationFlowRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func CreateVerificationFlow(ctx context.Context, r CreateVerificationFlowRequest) (CreateVerificationFlowResponse, error) {
+func CreateVerificationFlow(ctx context.Context, r CreateVerificationFlowRequest) (CreateVerificationFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SELF_SERVICE_CREATE_VERIFICATION_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "CreateVerificationFlow", "requestKratosPublic error", err)
-		return CreateVerificationFlowResponse{}, err
+		return CreateVerificationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosCreateVerificationFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetVerificationFlow", "json unmarshal error", err)
-		return CreateVerificationFlowResponse{}, err
+		return CreateVerificationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	response := CreateVerificationFlowResponse{
@@ -407,7 +439,7 @@ func CreateVerificationFlow(ctx context.Context, r CreateVerificationFlowRequest
 		},
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -437,12 +469,12 @@ type kratosUpdateVerificationFlowResponseBody struct {
 	State string      `json:"state"`
 }
 
-func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest) (UpdateVerificationFlowResponse, error) {
+func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest) (UpdateVerificationFlowResponse, KratosRequestHeader, error) {
 	// valiate parameter
 	//   email設定時は、Verification Flowを更新して、アカウント検証メールを送信
 	//   code設定時は、Verification Flowを完了
 	if (r.Body.Email != "" && r.Body.Code != "") || (r.Body.Email == "" && r.Body.Code == "") {
-		return UpdateVerificationFlowResponse{}, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
+		return UpdateVerificationFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
 	}
 
 	// Request to kratos
@@ -450,9 +482,9 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 	kratosInputBytes, err := json.Marshal(r.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateVerificationFlow", "json unmarshal error", err)
-		return UpdateVerificationFlowResponse{}, err
+		return UpdateVerificationFlowResponse{}, r.Header, err
 	}
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_VERIFICATION_FLOW, r.FlowID),
 		BodyBytes: kratosInputBytes,
@@ -460,14 +492,14 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateVerificationFlow", "requestKratosPublic error", err)
-		return UpdateVerificationFlowResponse{}, err
+		return UpdateVerificationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosUpdateVerificationFlowResponseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetVerificationFlow", "json unmarshal error", err)
-		return UpdateVerificationFlowResponse{}, err
+		return UpdateVerificationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -483,7 +515,38 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 	// 	response.Flow.IsUsedFlow = true
 	// }
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
+}
+
+// --------------------------------------------------------------------------
+// Create or Get Login Flow
+// --------------------------------------------------------------------------
+// CreateOrGetLoginFlow handles the logic for creating or getting a login flow
+func CreateOrGetLoginFlow(ctx context.Context, h KratosRequestHeader, flowID string, refresh bool) (LoginFlow, KratosResponseHeader, KratosRequestHeader, error) {
+	var (
+		err              error
+		loginFlow        LoginFlow
+		kratosReqHeader  KratosRequestHeader
+		kratosRespHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createLoginFlowResp CreateLoginFlowResponse
+		createLoginFlowResp, kratosReqHeader, err = CreateLoginFlow(ctx, CreateLoginFlowRequest{
+			Header:  h,
+			Refresh: refresh,
+		})
+		kratosRespHeader = createLoginFlowResp.Header
+		loginFlow = createLoginFlowResp.LoginFlow
+	} else {
+		var getLoginFlowResp GetLoginFlowResponse
+		getLoginFlowResp, kratosReqHeader, err = GetLoginFlow(ctx, GetLoginFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosRespHeader = getLoginFlowResp.Header
+		loginFlow = getLoginFlowResp.LoginFlow
+	}
+	return loginFlow, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -505,9 +568,9 @@ type kratosGetLoginFlowRespnseBody struct {
 	State string      `json:"state"`
 }
 
-func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowResponse, error) {
+func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_LOGIN_FLOW, r.FlowID),
 		Header: r.Header,
@@ -515,7 +578,7 @@ func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowRespo
 	if err != nil {
 		if !hasUiError(err, 4000007) {
 			slog.ErrorContext(ctx, "GeLoginFlow", "requestKratosPublic error", err)
-			return GetLoginFlowResponse{}, err
+			return GetLoginFlowResponse{}, kratosReqHeaderForNext, err
 		}
 	}
 
@@ -523,7 +586,7 @@ func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowRespo
 	var FlowkratosRespBody kratosGetLoginFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &FlowkratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GeLoginFlow", "json unmarshal error", err)
-		return GetLoginFlowResponse{}, err
+		return GetLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -541,7 +604,7 @@ func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowRespo
 		}
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -564,7 +627,7 @@ type kratosCreateLoginFlowRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLoginFlowResponse, error) {
+func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLoginFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_LOGIN_FLOW
 	// path = fmt.Sprintf("%s?aal=aal2", path)
@@ -572,21 +635,21 @@ func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLogin
 		path = fmt.Sprintf("%s?refresh=true", path)
 	}
 
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   path,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "GetLoginFlow", "requestKratosPublic error", err)
-		return CreateLoginFlowResponse{}, err
+		return CreateLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var createLoginFlowResp kratosCreateLoginFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &createLoginFlowResp); err != nil {
 		slog.ErrorContext(ctx, err.Error())
-		return CreateLoginFlowResponse{}, err
+		return CreateLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -603,7 +666,7 @@ func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLogin
 		}
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -635,32 +698,32 @@ type kratosUpdateLoginFlowResponseBody struct {
 }
 
 // Login Flow の送信(完了)
-func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLoginFlowResponse, error) {
+func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLoginFlowResponse, KratosRequestHeader, error) {
 	// valiate parameter
 	if r.Body.Method == "password" {
 		if r.Body.Password == "" || r.Body.Identifier == "" {
-			return UpdateLoginFlowResponse{}, fmt.Errorf("parameter convination error. password: %s, identifier: %s", r.Body.Password, r.Body.Identifier)
+			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. password: %s, identifier: %s", r.Body.Password, r.Body.Identifier)
 		}
 	} else if r.Body.Method == "oidc" {
 		if r.Body.Provider == "" {
-			return UpdateLoginFlowResponse{}, fmt.Errorf("parameter convination error. provider: %s", r.Body.Provider)
+			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. provider: %s", r.Body.Provider)
 		}
 	} else if r.Body.Method == "passkey" {
 		if r.Body.PasskeyLogin == "" {
-			return UpdateLoginFlowResponse{}, fmt.Errorf("parameter convination error. passkey: %s", r.Body.PasskeyLogin)
+			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. passkey: %s", r.Body.PasskeyLogin)
 		}
 	} else {
 		slog.ErrorContext(ctx, "UpdateLoginFlow", "Method", r.Body.Method)
-		return UpdateLoginFlowResponse{}, fmt.Errorf("invalid method: %s", r.Body.Method)
+		return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("invalid method: %s", r.Body.Method)
 	}
 
 	// Request to kratos
 	kratosInputBytes, err := json.Marshal(r.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
-		return UpdateLoginFlowResponse{}, err
+		return UpdateLoginFlowResponse{}, r.Header, err
 	}
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW, r.FlowID),
 		BodyBytes: kratosInputBytes,
@@ -672,7 +735,7 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else {
 			slog.ErrorContext(ctx, "UpdateLoginFlow", "requestKratosPublic error", err)
-			return UpdateLoginFlowResponse{}, err
+			return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
 		}
 	}
 
@@ -680,7 +743,7 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 	var kratosRespBody kratosUpdateLoginFlowResponseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
-		return UpdateLoginFlowResponse{}, err
+		return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Create response
@@ -690,7 +753,7 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 		RedirectBrowserTo: redirectBrowserTo,
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -713,34 +776,34 @@ type kratosUpdateLogoutFlowRequestBody struct {
 	CsrfToken string `json:"csrf_token"`
 }
 
-func Logout(ctx context.Context, r LogoutRequest) (LogoutResponse, error) {
+func Logout(ctx context.Context, r LogoutRequest) (LogoutResponse, KratosRequestHeader, error) {
 	// Request to kratos for create logout flow
-	kratosRespCreateLogoutFlow, err := requestKratosPublic(ctx, kratosRequest{
+	kratosRespCreateLogoutFlow, KratosRequestHeader, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SELF_SERVICE_GET_LOGOUT_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Logout", "requestKratosPublic error", err)
-		return LogoutResponse{}, err
+		return LogoutResponse{}, KratosRequestHeader, err
 	}
 
 	// Parse response body for create logout flow
 	var kratosRespBodyCreateLogoutFlow kratosCreateLogoutFlowRespnseBody
 	if err := json.Unmarshal(kratosRespCreateLogoutFlow.BodyBytes, &kratosRespBodyCreateLogoutFlow); err != nil {
 		slog.ErrorContext(ctx, "Logout", "json unmarshal error", err)
-		return LogoutResponse{}, err
+		return LogoutResponse{}, KratosRequestHeader, err
 	}
 
 	// Request to kratos for update logout flow
-	kratosRespUpdateLogoutFlow, err := requestKratosPublic(ctx, kratosRequest{
+	kratosRespUpdateLogoutFlow, KratosRequestHeader, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?flow=%s&token=%s", PATH_SELF_SERVICE_UPDATE_LOGOUT_FLOW, kratosRespBodyCreateLogoutFlow.ID, kratosRespBodyCreateLogoutFlow.LogoutToken),
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Logout", "requestKratosPublic error", err)
-		return LogoutResponse{}, err
+		return LogoutResponse{}, KratosRequestHeader, err
 	}
 
 	// Parse response body for update logout flow
@@ -748,7 +811,7 @@ func Logout(ctx context.Context, r LogoutRequest) (LogoutResponse, error) {
 		var kratosRespBodyUpdateLogoutFlow kratosUpdateLogoutFlowRequestBody
 		if err := json.Unmarshal(kratosRespUpdateLogoutFlow.BodyBytes, &kratosRespBodyUpdateLogoutFlow); err != nil {
 			slog.ErrorContext(ctx, "Logout", "json unmarshal error", err)
-			return LogoutResponse{}, err
+			return LogoutResponse{}, KratosRequestHeader, err
 		}
 	}
 
@@ -757,7 +820,37 @@ func Logout(ctx context.Context, r LogoutRequest) (LogoutResponse, error) {
 		Header: kratosRespUpdateLogoutFlow.Header,
 	}
 
-	return response, nil
+	return response, KratosRequestHeader, nil
+}
+
+// --------------------------------------------------------------------------
+// Create or Get Recovery Flow
+// --------------------------------------------------------------------------
+// CreateOrGetRecoveryFlow handles the logic for creating or getting a recovery flow
+func CreateOrGetRecoveryFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RecoveryFlow, KratosResponseHeader, KratosRequestHeader, error) {
+	var (
+		err              error
+		recoveryFlow     RecoveryFlow
+		kratosReqHeader  KratosRequestHeader
+		kratosRespHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createRecoveryFlowResp CreateRecoveryFlowResponse
+		createRecoveryFlowResp, kratosReqHeader, err = CreateRecoveryFlow(ctx, CreateRecoveryFlowRequest{
+			Header: h,
+		})
+		kratosRespHeader = createRecoveryFlowResp.Header
+		recoveryFlow = createRecoveryFlowResp.RecoveryFlow
+	} else {
+		var getRecoveryFlowResp GetRecoveryFlowResponse
+		getRecoveryFlowResp, kratosReqHeader, err = GetRecoveryFlow(ctx, GetRecoveryFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosRespHeader = getRecoveryFlowResp.Header
+		recoveryFlow = getRecoveryFlowResp.RecoveryFlow
+	}
+	return recoveryFlow, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -778,23 +871,23 @@ type kratosGetRecoveryFlowRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func GetRecoveryFlow(ctx context.Context, r GetRecoveryFlowRequest) (GetRecoveryFlowResponse, error) {
+func GetRecoveryFlow(ctx context.Context, r GetRecoveryFlowRequest) (GetRecoveryFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_RECOVERY_FLOW, r.FlowID),
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "GetRecoveryFlow", "requestKratosPublic error", err)
-		return GetRecoveryFlowResponse{}, err
+		return GetRecoveryFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosGetRecoveryFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetRecoveryFlow", "json unmarshal error", err)
-		return GetRecoveryFlowResponse{}, err
+		return GetRecoveryFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -806,7 +899,7 @@ func GetRecoveryFlow(ctx context.Context, r GetRecoveryFlowRequest) (GetRecovery
 		},
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -826,23 +919,23 @@ type kratosCreateRecoveryFlowRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func CreateRecoveryFlow(ctx context.Context, r CreateRecoveryFlowRequest) (CreateRecoveryFlowResponse, error) {
+func CreateRecoveryFlow(ctx context.Context, r CreateRecoveryFlowRequest) (CreateRecoveryFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SELF_SERVICE_CREATE_RECOVERY_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "CreateRecoveryFlow", "requestKratosPublic error", err)
-		return CreateRecoveryFlowResponse{}, err
+		return CreateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosCreateRecoveryFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "CreateRecoveryFlow", "json unmarshal error", err)
-		return CreateRecoveryFlowResponse{}, err
+		return CreateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -854,7 +947,7 @@ func CreateRecoveryFlow(ctx context.Context, r CreateRecoveryFlowRequest) (Creat
 		},
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -885,19 +978,19 @@ type kratosUpdateRecoveryFlowResponseBody struct {
 	ContinueWith []continueWith `json:"continue_with"`
 }
 
-func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (UpdateRecoveryFlowResponse, error) {
+func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (UpdateRecoveryFlowResponse, KratosRequestHeader, error) {
 	// valiate parameter
 	if (r.Body.Email != "" && r.Body.Code != "") || (r.Body.Email == "" && r.Body.Code == "") {
-		return UpdateRecoveryFlowResponse{}, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
+		return UpdateRecoveryFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
 	}
 
 	// Request to kratos
 	kratosInputBytes, err := json.Marshal(r.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateRecoveryFlow", "json unmarshal error", err)
-		return UpdateRecoveryFlowResponse{}, err
+		return UpdateRecoveryFlowResponse{}, r.Header, err
 	}
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_RECOVERY_FLOW, r.FlowID),
 		BodyBytes: kratosInputBytes,
@@ -909,7 +1002,7 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else {
 			slog.ErrorContext(ctx, "UpdateRecoveryFlow", "requestKratosPublic error", err)
-			return UpdateRecoveryFlowResponse{}, err
+			return UpdateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
 		}
 	}
 
@@ -917,7 +1010,7 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 	var kratosRespBody kratosUpdateRecoveryFlowResponseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateRecoveryFlow", "json unmarshal error", err)
-		return UpdateRecoveryFlowResponse{}, err
+		return UpdateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -933,7 +1026,37 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 			response.RecoveryFlowID = c.Flow.ID
 		}
 	}
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
+}
+
+// --------------------------------------------------------------------------
+// Create or Get Settings Flow
+// --------------------------------------------------------------------------
+// CreateOrGetSettingsFlow handles the logic for creating or getting a settings flow
+func CreateOrGetSettingsFlow(ctx context.Context, h KratosRequestHeader, flowID string) (SettingsFlow, KratosResponseHeader, KratosRequestHeader, error) {
+	var (
+		err              error
+		settingsFlow     SettingsFlow
+		kratosReqHeader  KratosRequestHeader
+		kratosRespHeader KratosResponseHeader
+	)
+	if flowID == "" {
+		var createSettingsFlowResp CreateSettingsFlowResponse
+		createSettingsFlowResp, kratosReqHeader, err = CreateSettingsFlow(ctx, CreateSettingsFlowRequest{
+			Header: h,
+		})
+		kratosRespHeader = createSettingsFlowResp.Header
+		settingsFlow = createSettingsFlowResp.SettingsFlow
+	} else {
+		var getSettingsFlowResp GetSettingsFlowResponse
+		getSettingsFlowResp, kratosReqHeader, err = GetSettingsFlow(ctx, GetSettingsFlowRequest{
+			Header: h,
+			FlowID: flowID,
+		})
+		kratosRespHeader = getSettingsFlowResp.Header
+		settingsFlow = getSettingsFlowResp.SettingsFlow
+	}
+	return settingsFlow, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -955,23 +1078,23 @@ type kratosGetSettingsFlowRespnseBody struct {
 	State string      `json:"state"`
 }
 
-func GetSettingsFlow(ctx context.Context, r GetSettingsFlowRequest) (GetSettingsFlowResponse, error) {
+func GetSettingsFlow(ctx context.Context, r GetSettingsFlowRequest) (GetSettingsFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_SETTINGS_FLOW, r.FlowID),
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "GetSettingsFlow", "requestKratosPublic error", err)
-		return GetSettingsFlowResponse{}, err
+		return GetSettingsFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosGetSettingsFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetSettingsFlow", "json unmarshal error", err)
-		return GetSettingsFlowResponse{}, err
+		return GetSettingsFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -983,7 +1106,7 @@ func GetSettingsFlow(ctx context.Context, r GetSettingsFlowRequest) (GetSettings
 		},
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -1003,23 +1126,23 @@ type kratosCreateSettingsFlowRespnseBody struct {
 	Ui uiContainer `json:"ui"`
 }
 
-func CreateSettingsFlow(ctx context.Context, r CreateSettingsFlowRequest) (CreateSettingsFlowResponse, error) {
+func CreateSettingsFlow(ctx context.Context, r CreateSettingsFlowRequest) (CreateSettingsFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SELF_SERVICE_CREATE_SETTINGS_FLOW,
 		Header: r.Header,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "CreateSettingsFlow", "requestKratosPublic error", err)
-		return CreateSettingsFlowResponse{}, err
+		return CreateSettingsFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Parse response body
 	var kratosRespBody kratosCreateSettingsFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "GetSettingsFlow", "json unmarshal error", err)
-		return CreateSettingsFlowResponse{}, err
+		return CreateSettingsFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// create response
@@ -1031,7 +1154,7 @@ func CreateSettingsFlow(ctx context.Context, r CreateSettingsFlowRequest) (Creat
 		},
 	}
 
-	return response, nil
+	return response, r.Header, nil
 }
 
 // --------------------------------------------------------------------------
@@ -1061,28 +1184,28 @@ type kratosUpdateSettingsFlowRespnseBody struct {
 	ContinueWith []continueWith `json:"continue_with"`
 }
 
-func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (UpdateSettingsFlowResponse, error) {
+func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (UpdateSettingsFlowResponse, KratosRequestHeader, error) {
 	// valiate parameter
 	if r.Body.Method == "password" {
 		if r.Body.Password == "" {
-			return UpdateSettingsFlowResponse{}, errors.New("missing password in body")
+			return UpdateSettingsFlowResponse{}, r.Header, errors.New("missing password in body")
 		}
 	} else if r.Body.Method == "profile" {
 		if r.Body.Traits == (Traits{}) {
-			return UpdateSettingsFlowResponse{}, errors.New("missing traits in body")
+			return UpdateSettingsFlowResponse{}, r.Header, errors.New("missing traits in body")
 		}
 	} else {
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "Method", r.Body.Method)
-		return UpdateSettingsFlowResponse{}, fmt.Errorf("invalid method: %s", r.Body.Method)
+		return UpdateSettingsFlowResponse{}, r.Header, fmt.Errorf("invalid method: %s", r.Body.Method)
 	}
 
 	// Request to kratos
 	kratosInputBytes, err := json.Marshal(r.Body)
 	if err != nil {
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "json unmarshal error", err)
-		return UpdateSettingsFlowResponse{}, err
+		return UpdateSettingsFlowResponse{}, r.Header, err
 	}
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW, r.FlowID),
 		BodyBytes: kratosInputBytes,
@@ -1096,7 +1219,7 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 			response.RedirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else {
 			slog.ErrorContext(ctx, "UpdateSettingsFlow", "requestKratosPublic error", err)
-			return response, err
+			return response, kratosReqHeaderForNext, err
 		}
 	}
 
@@ -1104,7 +1227,7 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 	var kratosRespBody kratosUpdateSettingsFlowRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "json unmarshal error", err)
-		return response, err
+		return response, kratosReqHeaderForNext, err
 	}
 
 	// Create response
@@ -1117,5 +1240,5 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 		}
 	}
 
-	return response, nil
+	return response, kratosReqHeaderForNext, nil
 }

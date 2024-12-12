@@ -84,7 +84,7 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	params, views, baseViewError, err := preparePostAuthVerificationEmail(w, r)
+	reqParams, views, baseViewError, err := preparePostAuthVerificationEmail(w, r)
 	if err != nil {
 		views.verificationCode.addParams(baseViewError.toViewParams()).render(w, r, session)
 		return
@@ -92,11 +92,11 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 
 	// Verification Flow 更新
 	updateVerificationFlowResp, _, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
-		FlowID: params.FlowID,
+		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateVerificationFlowRequestBody{
-			CsrfToken: params.CsrfToken,
-			Email:     params.Email,
+			CsrfToken: reqParams.CsrfToken,
+			Email:     reqParams.Email,
 		},
 	})
 	if err != nil {
@@ -106,7 +106,7 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 
 	// render page
 	addCookies(w, updateVerificationFlowResp.Header.Cookie)
-	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", params.FlowID))
+	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", reqParams.FlowID))
 	views.verificationCode.addParams(map[string]any{
 		"VerificationFlowID": updateVerificationFlowResp.Flow.FlowID,
 		"CsrfToken":          updateVerificationFlowResp.Flow.CsrfToken,

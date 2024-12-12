@@ -60,17 +60,17 @@ func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*ge
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := newGetAuthVerificationCodeRequestParams(r)
+	reqParams := newGetAuthVerificationCodeRequestParams(r)
 
 	// prepare views
 	views := getAuthVerificationCodeViews{
-		verificationCode: newView("auth/verification/_code_form.html").addParams(params.toViewParams()),
+		verificationCode: newView("auth/verification/_code_form.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
+	if viewError := reqParams.validate(); viewError.hasError() {
 		views.verificationCode.addParams(viewError.toViewParams()).render(w, r, session)
-		return params, views, viewError, nil
+		return reqParams, views, viewError, nil
 	}
 
 	// base view error
@@ -78,7 +78,7 @@ func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*ge
 		MessageID: "ERR_VERIFICATION_DEDAULT",
 	}))
 
-	return params, views, baseViewError, nil
+	return reqParams, views, baseViewError, nil
 }
 
 // Handler GET /auth/verification/code
@@ -87,14 +87,14 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	params, views, baseViewError, err := prepareGetAuthVerificationCode(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthVerificationCode(w, r)
 	if err != nil {
 		views.verificationCode.addParams(baseViewError.toViewParams()).render(w, r, session)
 		return
 	}
 
 	// create or get verification Flow
-	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), params.FlowID)
+	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return

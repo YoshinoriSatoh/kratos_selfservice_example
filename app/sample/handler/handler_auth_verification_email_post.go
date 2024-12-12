@@ -48,7 +48,8 @@ func (params *postAuthVerificationEmailRequestParams) validate() *viewError {
 	return viewError
 }
 
-func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) {
+// collect rendering data and validate request parameters.
+func preparePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) (*postAuthVerificationEmailRequestParams, *view, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -61,13 +62,27 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
 		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
+		return params, verificationCodeView, viewError, nil
 	}
 
 	// base view error
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_VERIFICATION_DEFAULT",
 	}))
+
+	return params, verificationCodeView, baseViewError, nil
+}
+
+func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect rendering data and validate request parameters.
+	params, verificationCodeView, baseViewError, err := preparePostAuthVerificationEmail(w, r)
+	if err != nil {
+		verificationCodeView.addParams(baseViewError.toViewParams()).render(w, r, session)
+		return
+	}
 
 	// Verification Flow 更新
 	updateVerificationFlowResp, _, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{

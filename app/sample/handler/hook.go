@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/kratos"
 )
 
 type HookID string

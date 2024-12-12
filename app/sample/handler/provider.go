@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
-	"github.com/YoshinoriSatoh/kratos_example/external/sms"
+	"github.com/YoshinoriSatoh/kratos_example/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/sms"
 
 	"github.com/google/uuid"
 )
@@ -17,8 +17,7 @@ type Provider struct {
 }
 
 type Dependencies struct {
-	Kratos *kratos.Provider
-	Sms    *sms.Provider
+	Sms *sms.Provider
 }
 
 type NewInput struct {
@@ -49,7 +48,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	}))
 
 	// Authentication Registration
-	mux.Handle("GET /auth/registration", p.baseMiddleware(p.getAuthRegistration))
+	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
 	mux.Handle("POST /auth/registration/step-one", p.baseMiddleware(p.handlePostAuthRegistrationStepOne))
 	mux.Handle("POST /auth/registration/step-two/password", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoPassword))
 	mux.Handle("POST /auth/registration/step-two/oidc", p.baseMiddleware(p.handlePostAuthRegistrationStepTwoOidc))
@@ -114,7 +113,7 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, ctxRemoteAddr{}, r.RemoteAddr)
 		ctx = context.WithValue(ctx, ctxCookie{}, r.Header.Get("Cookie"))
 
-		whoamiResp, err := p.d.Kratos.Whoami(ctx, kratos.WhoamiRequest{
+		whoamiResp, err := kratos.Whoami(ctx, kratos.WhoamiRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		if err != nil || whoamiResp.Session == nil {

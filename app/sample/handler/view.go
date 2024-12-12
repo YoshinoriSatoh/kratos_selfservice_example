@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/nicksnyder/go-i18n/v2/i18n"

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
@@ -81,14 +81,14 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	)
 	if params.FlowID == "" {
 		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
-		createVerificatoinFlowResp, err = p.d.Kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
+		createVerificatoinFlowResp, err = kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		kratosResponseHeader = createVerificatoinFlowResp.Header
 		verificationFlow = createVerificatoinFlowResp.VerificationFlow
 	} else {
 		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
-		getVerificatoinFlowResp, err = p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+		getVerificatoinFlowResp, err = kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 			FlowID: params.FlowID,
 		})
@@ -180,14 +180,14 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	)
 	if params.FlowID == "" {
 		var createVerificatoinFlowResp kratos.CreateVerificationFlowResponse
-		createVerificatoinFlowResp, err = p.d.Kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
+		createVerificatoinFlowResp, err = kratos.CreateVerificationFlow(ctx, kratos.CreateVerificationFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		kratosResponseHeader = createVerificatoinFlowResp.Header
 		verificationFlow = createVerificatoinFlowResp.VerificationFlow
 	} else {
 		var getVerificatoinFlowResp kratos.GetVerificationFlowResponse
-		getVerificatoinFlowResp, err = p.d.Kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+		getVerificatoinFlowResp, err = kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 			FlowID: params.FlowID,
 		})
@@ -269,7 +269,7 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	}))
 
 	// Verification Flow 更新
-	updateVerificationFlowResp, err := p.d.Kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
+	updateVerificationFlowResp, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
 		FlowID: params.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateVerificationFlowRequestBody{
@@ -365,7 +365,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	}))
 
 	// Verification Flow 更新
-	updateVerificationFlowResp, err := p.d.Kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
+	updateVerificationFlowResp, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
 		FlowID: params.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateVerificationFlowRequestBody{
@@ -391,7 +391,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 	kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, updateVerificationFlowResp.Header.Cookie)
 	// create login flow
-	createLoginFlowResp, err := p.d.Kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+	createLoginFlowResp, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header:  kratosRequestHeader,
 		Refresh: true,
 	})

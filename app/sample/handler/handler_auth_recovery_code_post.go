@@ -1,0 +1,111 @@
+package handler
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/YoshinoriSatoh/kratos_example/kratos"
+
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+)
+
+// --------------------------------------------------------------------------
+// POST /auth/recovery/code
+// --------------------------------------------------------------------------
+// Request parameters for handlePostAuthRecoveryCode
+type postAuthRecoveryCodeRequestParams struct {
+	FlowID    string `validate:"uuid4"`
+	CsrfToken string `validate:"required"`
+	Code      string `validate:"required,len=6,number" ja:"復旧コード"`
+}
+
+// Extract parameters from http request
+func newPostAutRecoveryCodeRequestParams(r *http.Request) *postAuthRecoveryCodeRequestParams {
+	return &postAuthRecoveryCodeRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Code:      r.PostFormValue("code"),
+	}
+}
+
+// Return parameters that can refer in view template
+func (p *postAuthRecoveryCodeRequestParams) toViewParams() map[string]any {
+	return map[string]any{
+		"RecoveryFlowID": p.FlowID,
+		"CsrfToken":      p.CsrfToken,
+		"Code":           p.Code,
+	}
+}
+
+// Validate request parameters and return viewError
+// If you do not want Validation errors to be displayed near input fields,
+// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
+func (params *postAuthRecoveryCodeRequestParams) validate() *viewError {
+	viewError := newViewError().extract(pkgVars.validate.Struct(params))
+
+	// Individual validations write here that cannot validate in common validations
+
+	return viewError
+}
+
+func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// collect request parameters
+	params := newPostAutRecoveryCodeRequestParams(r)
+
+	// prepare views
+	recoveryCodeFormView := newView("auth/recovery/_code_form.html").addParams(params.toViewParams())
+	myPasswordIndexView := newView("my/password/index.html").addParams(params.toViewParams())
+
+	// validate request parameters
+	if viewError := params.validate(); viewError.hasError() {
+		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, r, session)
+		return
+	}
+
+	// base view error
+	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+		MessageID: "ERR_RECOVERY_DEFAULT",
+	}))
+
+	// Recovery Flow 更新
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+	kratosResp, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
+		FlowID: params.FlowID,
+		Header: kratosRequestHeader,
+		Body: kratos.UpdateRecoveryFlowRequestBody{
+			CsrfToken: params.CsrfToken,
+			Method:    "code",
+			Code:      params.Code,
+		},
+	})
+	if err != nil {
+		recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+
+	addCookies(w, kratosResp.Header.Cookie)
+	if kratosResp.RedirectBrowserTo != "" {
+		arr := strings.Split(kratosResp.RedirectBrowserTo, "=")
+		settingsFlowID := arr[1]
+		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
+
+		getSettingsFlowResp, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+			FlowID: settingsFlowID,
+			Header: kratosRequestHeader,
+		})
+		if err != nil {
+			recoveryCodeFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		addCookies(w, getSettingsFlowResp.Header.Cookie)
+		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", settingsFlowID))
+		myPasswordIndexView.addParams(map[string]any{
+			"SettingsFlowID": settingsFlowID,
+			"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
+		}).render(w, r, session)
+	}
+}

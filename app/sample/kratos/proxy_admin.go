@@ -19,9 +19,9 @@ type AdminGetIdentityRequest struct {
 	ID string `json:"id"`
 }
 
-func (p *Provider) AdminGetIdentity(ctx context.Context, r AdminGetIdentityRequest) (*Identity, error) {
+func AdminGetIdentity(ctx context.Context, r AdminGetIdentityRequest) (*Identity, error) {
 	// Request to kratos
-	kratosResp, err := p.requestKratosAdmin(ctx, kratosRequest{
+	kratosResp, err := requestKratosAdmin(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s/%s", PATH_ADMIN_LIST_IDENTITIES, r.ID),
 	})
@@ -46,9 +46,9 @@ type AdminListIdentitiesRequest struct {
 	CredentialIdentifier string `json:"credentials_identifier"`
 }
 
-func (p *Provider) AdminListIdentities(ctx context.Context, r AdminListIdentitiesRequest) ([]Identity, error) {
+func AdminListIdentities(ctx context.Context, r AdminListIdentitiesRequest) ([]Identity, error) {
 	// Request to kratos
-	kratosResp, err := p.requestKratosAdmin(ctx, kratosRequest{
+	kratosResp, err := requestKratosAdmin(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   fmt.Sprintf("%s?credentials_identifier=%s", PATH_ADMIN_LIST_IDENTITIES, r.CredentialIdentifier),
 	})

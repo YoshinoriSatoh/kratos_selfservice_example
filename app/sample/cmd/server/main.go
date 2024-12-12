@@ -5,13 +5,12 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/YoshinoriSatoh/kratos_example/external/kratos"
-	"github.com/YoshinoriSatoh/kratos_example/external/sms"
-	"github.com/YoshinoriSatoh/kratos_example/ui/handler"
+	"github.com/YoshinoriSatoh/kratos_example/handler"
+	"github.com/YoshinoriSatoh/kratos_example/kratos"
+	"github.com/YoshinoriSatoh/kratos_example/sms"
 )
 
 var (
-	kratosProvider  *kratos.Provider
 	handlerProvider *handler.Provider
 	smsProvider     *sms.Provider
 )
@@ -44,16 +43,6 @@ func init() {
 		},
 	})
 
-	// Create package providers with dependencies
-	kratosProvider, err = kratos.New(
-		kratos.NewInput{
-			Dependencies: kratos.Dependencies{},
-		},
-	)
-	if err != nil {
-		panic(err)
-	}
-
 	if config.AwsProfile == "" {
 		smsProvider, err = sms.New(config.Sms.AwsRegion)
 	} else {
@@ -66,8 +55,7 @@ func init() {
 	handlerProvider, err = handler.New(
 		handler.NewInput{
 			Dependencies: handler.Dependencies{
-				Kratos: kratosProvider,
-				Sms:    smsProvider,
+				Sms: smsProvider,
 			},
 		},
 	)

@@ -33,11 +33,11 @@ type kratosResponse struct {
 	Header     KratosResponseHeader
 }
 
-func (p *Provider) requestKratosPublic(ctx context.Context, i kratosRequest) (kratosResponse, error) {
+func requestKratosPublic(ctx context.Context, i kratosRequest) (kratosResponse, error) {
 	return requestKratos(ctx, pkgVars.kratosPublicEndpoint, i)
 }
 
-func (p *Provider) requestKratosAdmin(ctx context.Context, i kratosRequest) (kratosResponse, error) {
+func requestKratosAdmin(ctx context.Context, i kratosRequest) (kratosResponse, error) {
 	return requestKratos(ctx, pkgVars.kratosAdminEndpoint, i)
 }
 
@@ -94,6 +94,13 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 			Cookie: resp.Header["Set-Cookie"],
 		},
 	}, getKratosError(ctx, body, resp.StatusCode)
+}
+
+func makeDefaultKratosRequestHeader(r *http.Request) KratosRequestHeader {
+	return KratosRequestHeader{
+		Cookie:   r.Header.Get("Cookie"),
+		ClientIP: r.RemoteAddr,
+	}
 }
 
 // status code 400 の場合のレスポンスボディのフォーマット

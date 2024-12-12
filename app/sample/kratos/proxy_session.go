@@ -23,9 +23,9 @@ type WhoamiResponse struct {
 	Session *Session
 }
 
-func (p *Provider) Whoami(ctx context.Context, r WhoamiRequest) (WhoamiResponse, error) {
+func Whoami(ctx context.Context, r WhoamiRequest) (WhoamiResponse, error) {
 	// Request to kratos
-	kratosResp, err := p.requestKratosPublic(ctx, kratosRequest{
+	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SESSIONS_WHOAMI,
 		Header: r.Header,

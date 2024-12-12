@@ -60,8 +60,14 @@ func (params *postAuthVerificationCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type postAuthVerificationCodeViews struct {
+	verificationCode *view
+	loginIndex       *view
+}
+
 // collect rendering data and validate request parameters.
-func preparePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*postAuthVerificationCodeRequestParams, *view, *view, *viewError, error) {
+func preparePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*postAuthVerificationCodeRequestParams, postAuthVerificationCodeViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -70,16 +76,18 @@ func preparePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*p
 		MessageID: "ERR_VERIFICATION_DEFAULT",
 	}))
 	reqParams := newPostAuthVerificationCodeRequestParams(r)
-	verificationCodeView := newView("auth/verification/_code_form.html").addParams(reqParams.toViewParams())
-	loginIndexView := newView("auth/login/index.html").addParams(reqParams.toViewParams())
+	views := postAuthVerificationCodeViews{
+		verificationCode: newView("auth/verification/_code_form.html").addParams(reqParams.toViewParams()),
+		loginIndex:       newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, verificationCodeView, loginIndexView, baseViewError, fmt.Errorf("validation error: %v", viewError)
+		views.verificationCode.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
-	return reqParams, verificationCodeView, loginIndexView, baseViewError, nil
+	return reqParams, views, baseViewError, nil
 }
 
 func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +95,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, verificationCodeView, loginIndexView, baseViewError, err := preparePostAuthVerificationCode(w, r)
+	reqParams, views, baseViewError, err := preparePostAuthVerificationCode(w, r)
 	if err != nil {
 		slog.ErrorContext(ctx, "preparePostAuthVerificationCode failed", "err", err)
 		return
@@ -104,7 +112,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())
-		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -123,14 +131,14 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())
-		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, createLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-	loginIndexView.addParams(map[string]any{
+	views.loginIndex.addParams(map[string]any{
 		"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
 		"Information": "コードによる検証が完了しました。お手数ですが改めてログインしてください。",
 		"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,

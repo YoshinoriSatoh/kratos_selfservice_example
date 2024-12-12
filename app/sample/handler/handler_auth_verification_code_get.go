@@ -49,8 +49,13 @@ func (p *getAuthVerificationCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type getAuthVerificationCodeViews struct {
+	verificationCode *view
+}
+
 // collect rendering data and validate request parameters.
-func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*getAuthVerificationCodeRequestParams, *view, *viewError, error) {
+func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*getAuthVerificationCodeRequestParams, getAuthVerificationCodeViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -58,12 +63,14 @@ func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*ge
 	params := newGetAuthVerificationCodeRequestParams(r)
 
 	// prepare views
-	verificationCodeView := newView("auth/verification/_code_form.html").addParams(params.toViewParams())
+	views := getAuthVerificationCodeViews{
+		verificationCode: newView("auth/verification/_code_form.html").addParams(params.toViewParams()),
+	}
 
 	// validate request parameters
 	if viewError := params.validate(); viewError.hasError() {
-		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return params, verificationCodeView, viewError, nil
+		views.verificationCode.addParams(viewError.toViewParams()).render(w, r, session)
+		return params, views, viewError, nil
 	}
 
 	// base view error
@@ -71,7 +78,7 @@ func prepareGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) (*ge
 		MessageID: "ERR_VERIFICATION_DEDAULT",
 	}))
 
-	return params, verificationCodeView, baseViewError, nil
+	return params, views, baseViewError, nil
 }
 
 // Handler GET /auth/verification/code
@@ -80,22 +87,22 @@ func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	params, verificationCodeView, baseViewError, err := prepareGetAuthVerificationCode(w, r)
+	params, views, baseViewError, err := prepareGetAuthVerificationCode(w, r)
 	if err != nil {
-		verificationCodeView.addParams(baseViewError.toViewParams()).render(w, r, session)
+		views.verificationCode.addParams(baseViewError.toViewParams()).render(w, r, session)
 		return
 	}
 
 	// create or get verification Flow
 	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), params.FlowID)
 	if err != nil {
-		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
-	verificationCodeView.addParams(map[string]any{
+	views.verificationCode.addParams(map[string]any{
 		"VerificationFlowID": verificationFlow.FlowID,
 		"CsrfToken":          verificationFlow.CsrfToken,
 		"IsUsedFlow":         verificationFlow.IsUsedFlow,

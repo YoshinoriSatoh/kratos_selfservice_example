@@ -48,21 +48,27 @@ func (params *postAuthVerificationEmailRequestParams) validate() *viewError {
 	return viewError
 }
 
+// Views
+type postAuthVerificationEmailViews struct {
+	verificationCode *view
+}
+
 // collect rendering data and validate request parameters.
-func preparePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) (*postAuthVerificationEmailRequestParams, *view, *viewError, error) {
+func preparePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) (*postAuthVerificationEmailRequestParams, postAuthVerificationEmailViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect request parameters
-	params := newPostAuthVerificationEmailRequestParams(r)
+	reqParams := newPostAuthVerificationEmailRequestParams(r)
 
 	// prepare views
-	verificationCodeView := newView("auth/verification/_email_form.html").addParams(params.toViewParams())
-
+	views := postAuthVerificationEmailViews{
+		verificationCode: newView("auth/verification/_email_form.html").addParams(reqParams.toViewParams()),
+	}
 	// validate request parameters
-	if viewError := params.validate(); viewError.hasError() {
-		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return params, verificationCodeView, viewError, nil
+	if viewError := reqParams.validate(); viewError.hasError() {
+		views.verificationCode.addParams(viewError.toViewParams()).render(w, r, session)
+		return reqParams, views, viewError, nil
 	}
 
 	// base view error
@@ -70,7 +76,7 @@ func preparePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) (*
 		MessageID: "ERR_VERIFICATION_DEFAULT",
 	}))
 
-	return params, verificationCodeView, baseViewError, nil
+	return reqParams, views, baseViewError, nil
 }
 
 func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *http.Request) {
@@ -78,9 +84,9 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	params, verificationCodeView, baseViewError, err := preparePostAuthVerificationEmail(w, r)
+	params, views, baseViewError, err := preparePostAuthVerificationEmail(w, r)
 	if err != nil {
-		verificationCodeView.addParams(baseViewError.toViewParams()).render(w, r, session)
+		views.verificationCode.addParams(baseViewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -94,14 +100,14 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 		},
 	})
 	if err != nil {
-		verificationCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, updateVerificationFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", params.FlowID))
-	verificationCodeView.addParams(map[string]any{
+	views.verificationCode.addParams(map[string]any{
 		"VerificationFlowID": updateVerificationFlowResp.Flow.FlowID,
 		"CsrfToken":          updateVerificationFlowResp.Flow.CsrfToken,
 		"IsUsedFlow":         updateVerificationFlowResp.Flow.IsUsedFlow,

@@ -101,7 +101,7 @@ func (p *Provider) handlePostAuthRegistrationStepTwoPasskey(w http.ResponseWrite
 	}
 
 	// Registration Flow 更新
-	kratosResp, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
@@ -135,12 +135,9 @@ func (p *Provider) handlePostAuthRegistrationStepTwoPasskey(w http.ResponseWrite
 		information = "メールアドレスとパスワードで登録された既存のアカウントが存在します。パスワードを入力してログインすると、Googleのアカウントと連携されます。"
 	}
 
-	// Transferring cookies from update registration flow response
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 	// create login flow
-	createLoginFlowResp, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-		Header: kratosRequestHeader,
+	createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+		Header: kratosReqHeaderForNext,
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "update verification error", "err", err.Error())

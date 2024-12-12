@@ -11,31 +11,31 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// GET /auth/recovery
+// GET /auth/verification
 // --------------------------------------------------------------------------
-// Request parameters for handleGetAuthRecovery
-type getAuthRecoveryRequestParams struct {
-	FlowID string
+// Request parameters for handleGetAuthVerification
+type getAuthVerificationRequestParams struct {
+	FlowID string `validate:"omitempty,uuid4"`
 }
 
 // Extract parameters from http request
-func newGetAuthRecoveryRequestParams(r *http.Request) *getAuthRecoveryRequestParams {
-	return &getAuthRecoveryRequestParams{
+func newGetAuthVerificationRequestParams(r *http.Request) *getAuthVerificationRequestParams {
+	return &getAuthVerificationRequestParams{
 		FlowID: r.URL.Query().Get("flow"),
 	}
 }
 
 // Return parameters that can refer in view template
-func (p *getAuthRecoveryRequestParams) toViewParams() map[string]any {
+func (p *getAuthVerificationRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"RecoveryFlowID": p.FlowID,
+		"VerificationFlowID": p.FlowID,
 	}
 }
 
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthRecoveryRequestParams) validate() *viewError {
+func (p *getAuthVerificationRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(p))
 
 	for k := range viewError.validationFieldErrors {
@@ -52,22 +52,22 @@ func (p *getAuthRecoveryRequestParams) validate() *viewError {
 }
 
 // Views
-type getAuthRecoveryViews struct {
+type getAuthVerificationViews struct {
 	index *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthRecovery(w http.ResponseWriter, r *http.Request) (*getAuthRecoveryRequestParams, getAuthRecoveryViews, *viewError, error) {
+func prepareGetAuthVerification(w http.ResponseWriter, r *http.Request) (*getAuthVerificationRequestParams, getAuthVerificationViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_RECOVERY_DEFAULT",
+		MessageID: "ERR_VERIFICATION_DEFAULT",
 	}))
-	reqParams := newGetAuthRecoveryRequestParams(r)
-	views := getAuthRecoveryViews{
-		index: newView("auth/recovery/index.html").addParams(reqParams.toViewParams()),
+	reqParams := newGetAuthVerificationRequestParams(r)
+	views := getAuthVerificationViews{
+		index: newView("auth/verification/index.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -79,30 +79,30 @@ func prepareGetAuthRecovery(w http.ResponseWriter, r *http.Request) (*getAuthRec
 	return reqParams, views, baseViewError, nil
 }
 
-func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request) {
+// Handler GET /auth/verification
+func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthRecovery(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthVerification(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthRecovery failed", "err", err)
+		slog.ErrorContext(ctx, "prepareGetAuthVerification failed", "err", err)
 		return
 	}
 
-	// create or get recovery Flow
-	recoveryFlow, kratosResponseHeader, _, err := kratos.CreateOrGetRecoveryFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
+	// create or get verification Flow
+	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// add cookies to the request header
-	addCookies(w, kratosResponseHeader.Cookie)
-
 	// render page
+	addCookies(w, kratosResponseHeader.Cookie)
 	views.index.addParams(map[string]any{
-		"RecoveryFlowID": recoveryFlow.FlowID,
-		"CsrfToken":      recoveryFlow.CsrfToken,
+		"VerificationFlowID": verificationFlow.FlowID,
+		"CsrfToken":          verificationFlow.CsrfToken,
+		"IsUsedFlow":         verificationFlow.IsUsedFlow,
 	}).render(w, r, session)
 }

@@ -91,7 +91,7 @@ func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	updateLogoutFlowResp, err := kratos.Logout(ctx, kratos.LogoutRequest{
+	updateLogoutFlowResp, _, err := kratos.Logout(ctx, kratos.LogoutRequest{
 		Header: makeDefaultKratosRequestHeader(r),
 	})
 	if err != nil {

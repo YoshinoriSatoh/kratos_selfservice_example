@@ -16,17 +16,17 @@ type KratosLinkIdentityIfExistsRequest struct {
 }
 
 // Upaate identity when user already registered with the same credential of provided the oidc provider.
-func KratosLinkIdentityIfExists(ctx context.Context, r KratosLinkIdentityIfExistsRequest) (*UpdateRegistrationFlowResponse, error) {
+func KratosLinkIdentityIfExists(ctx context.Context, r KratosLinkIdentityIfExistsRequest) (*UpdateRegistrationFlowResponse, KratosRequestHeader, error) {
 	identity, err := AdminGetIdentity(ctx, AdminGetIdentityRequest{
 		ID: r.ID,
 	})
 	if err != nil {
 		slog.Error("AdminGetIdentity failed", "error", err)
-		return nil, &Error{Err: err}
+		return nil, r.RequestHeader, &Error{Err: err}
 	}
 	if identity != nil {
 		// update Registration Flow
-		kratosResp, err := UpdateRegistrationFlow(ctx, UpdateRegistrationFlowRequest{
+		kratosResp, kratosReqHeaderForNext, err := UpdateRegistrationFlow(ctx, UpdateRegistrationFlowRequest{
 			FlowID: r.RegistrationFlow.FlowID,
 			Header: r.RequestHeader,
 			Body: UpdateRegistrationFlowRequestBody{
@@ -38,9 +38,9 @@ func KratosLinkIdentityIfExists(ctx context.Context, r KratosLinkIdentityIfExist
 		})
 		if err != nil {
 			slog.Error("UpdateRegistrationFlow failed", "error", err)
-			return nil, &Error{Err: err}
+			return nil, kratosReqHeaderForNext, &Error{Err: err}
 		}
-		return &kratosResp, nil
+		return &kratosResp, kratosReqHeaderForNext, nil
 	}
-	return nil, nil
+	return nil, r.RequestHeader, nil
 }

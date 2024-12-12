@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
@@ -94,7 +93,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create or get registration Flow
-	loginFlow, kratosResponseHeader, err := kratos.CreateOrGetLoginFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID, isAuthenticated(session))
+	loginFlow, kratosRespHeader, _, err := kratos.CreateOrGetLoginFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID, isAuthenticated(session))
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない
 	if err != nil && loginFlow.DuplicateIdentifier == "" {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
@@ -121,9 +120,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	// 	information = "プロフィール更新のために、再度ログインをお願いします。"
 	// }
 
-	addCookies(w, kratosResponseHeader.Cookie)
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
+	addCookies(w, kratosRespHeader.Cookie)
 	views.index.addParams(map[string]any{
 		"LoginFlowID":        loginFlow.FlowID,
 		"Information":        information,

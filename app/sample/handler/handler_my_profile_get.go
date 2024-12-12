@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
@@ -104,7 +103,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create or get settings Flow
-	settingsFlow, kratosResponseHeader, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
+	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
@@ -112,8 +111,6 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	// add cookies to the request header
 	addCookies(w, kratosResponseHeader.Cookie)
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosRequestHeader.Cookie = strings.Join(kratosResponseHeader.Cookie, " ")
 
 	// render page
 	year, month, day := parseDate(session.Identity.Traits.Birthdate)

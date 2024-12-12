@@ -93,7 +93,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 
 	// Recovery Flow 更新
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
-	kratosResp, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
+	kratosResp, _, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: kratosRequestHeader,
 		Body: kratos.UpdateRecoveryFlowRequestBody{
@@ -113,7 +113,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		settingsFlowID := arr[1]
 		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 
-		getSettingsFlowResp, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+		getSettingsFlowResp, _, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
 			FlowID: settingsFlowID,
 			Header: kratosRequestHeader,
 		})

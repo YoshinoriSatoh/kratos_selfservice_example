@@ -25,7 +25,7 @@ type WhoamiResponse struct {
 
 func Whoami(ctx context.Context, r WhoamiRequest) (WhoamiResponse, error) {
 	// Request to kratos
-	kratosResp, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, _, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   PATH_SESSIONS_WHOAMI,
 		Header: r.Header,

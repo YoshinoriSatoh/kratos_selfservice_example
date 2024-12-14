@@ -58,10 +58,11 @@ func (params *postAuthLoginPasskeyRequestParams) validate() *viewError {
 // Views
 type getAuthLoginPasskeyViews struct {
 	index *view
+	form  *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthLoginPasskey(w http.ResponseWriter, r *http.Request) (*postAuthLoginPasskeyRequestParams, getAuthLoginPasskeyViews, *viewError, error) {
+func preparePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) (*postAuthLoginPasskeyRequestParams, getAuthLoginPasskeyViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -71,12 +72,13 @@ func prepareGetAuthLoginPasskey(w http.ResponseWriter, r *http.Request) (*postAu
 	}))
 	reqParams := newPostAuthLoginPasskeyRequestParams(r)
 	views := getAuthLoginPasskeyViews{
-		index: newView("auth/login/_form_passkey.html").addParams(reqParams.toViewParams()),
+		index: newView("top/index.html").addParams(reqParams.toViewParams()),
+		form:  newView("auth/login/_form_passkey.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		views.form.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -88,9 +90,9 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthLoginPasskey(w, r)
+	reqParams, views, baseViewError, err := preparePostAuthLoginPasskey(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginPasskey failed", "err", err)
+		slog.ErrorContext(ctx, "preparePostAuthLoginPasskey failed", "err", err)
 		return
 	}
 
@@ -106,7 +108,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 		},
 	})
 	if err != nil {
-		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 

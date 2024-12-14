@@ -17,8 +17,7 @@ import (
 
 // Request parameters
 type getAuthRegistrationRequestParams struct {
-	FlowID              string `validate:"omitempty,uuid4"`
-	PasskeyRegistration bool   `validate:"omitempty"`
+	FlowID string `validate:"omitempty,uuid4"`
 }
 
 // Return parameters that can refer in view template
@@ -52,9 +51,8 @@ func (p *getAuthRegistrationRequestParams) validate() *viewError {
 
 // Views
 type getAuthRegistrationViews struct {
-	password *view
-	oidc     *view
-	passkey  *view
+	profile *view
+	oidc    *view
 }
 
 // collect rendering data and validate request parameters.
@@ -67,18 +65,16 @@ func prepareGetAuthRegistration(w http.ResponseWriter, r *http.Request) (*getAut
 		MessageID: "ERR_REGISTRATION_DEFAULT",
 	}))
 	reqParams := &getAuthRegistrationRequestParams{
-		FlowID:              r.URL.Query().Get("flow"),
-		PasskeyRegistration: r.URL.Query().Get("passkey_registration") == "true",
+		FlowID: r.URL.Query().Get("flow"),
 	}
 	views := getAuthRegistrationViews{
-		password: newView("auth/registration/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "password"}),
-		oidc:     newView("auth/registration/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "passkey"}),
-		passkey:  newView("auth/registration/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
+		profile: newView("auth/registration/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "profile"}),
+		oidc:    newView("auth/registration/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.password.addParams(viewError.toViewParams()).render(w, r, session)
+		views.profile.addParams(viewError.toViewParams()).render(w, r, session)
 		err := fmt.Errorf("validation error: %v", viewError)
 		slog.ErrorContext(ctx, "validation error", "viewError", viewError)
 		return reqParams, views, baseViewError, err
@@ -102,15 +98,16 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	// create or get registration Flow
 	registrationFlow, kratosRespHeader, kratosReqHeaderForNext, err := kratos.KratosCreateOrGetRegistrationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
-		views.password.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.profile.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// Update identity when user already registered with the same credential of provided the oidc provider.
-	if registrationFlow.CredentialType == kratos.CredentialsTypeOidc {
+	if registrationFlow.OidcProvider.Provided() {
 		kratosUpdateRegistrationFlowResp, _, err := kratos.KratosLinkIdentityIfExists(ctx, kratos.KratosLinkIdentityIfExistsRequest{
-			ID:            registrationFlow.Traits.Email,
-			RequestHeader: kratosReqHeaderForNext,
+			CredentialIdentifier: registrationFlow.Traits.Email,
+			RequestHeader:        kratosReqHeaderForNext,
+			RegistrationFlow:     registrationFlow,
 		})
 		if err != nil {
 			slog.Error("Kratos.LinkIdentityIfExists failed", "error", err)
@@ -124,29 +121,10 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 			if kratosUpdateRegistrationFlowResp.RedirectBrowserTo != "" {
 				// w.Header().Set("HX-Redirect", kratosResp.RedirectBrowserTo)
 				redirect(w, r, kratosUpdateRegistrationFlowResp.RedirectBrowserTo)
+				return
 			}
 		}
-	}
 
-	// render page
-	switch registrationFlow.CredentialType {
-	case kratos.CredentialsTypePassword:
-		addCookies(w, kratosRespHeader.Cookie)
-		setHeadersForReplaceBody(w, "/auth/registration")
-		if reqParams.PasskeyRegistration {
-			views.passkey.addParams(map[string]any{
-				"RegistrationFlowID": registrationFlow.FlowID,
-				"CsrfToken":          registrationFlow.CsrfToken,
-				"Traits":             registrationFlow.Traits,
-				"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
-			}).render(w, r, session)
-		} else {
-			views.password.addParams(map[string]any{
-				"RegistrationFlowID": registrationFlow.FlowID,
-				"CsrfToken":          registrationFlow.CsrfToken,
-			}).render(w, r, session)
-		}
-	case kratos.CredentialsTypeOidc:
 		addCookies(w, kratosRespHeader.Cookie) // set cookie that was responsed last from kratos (exclude admin api).
 		views.oidc.addParams(map[string]any{
 			"RegistrationFlowID": registrationFlow.FlowID,
@@ -154,7 +132,15 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 			"Provider":           registrationFlow.OidcProvider,
 			"Traits":             registrationFlow.Traits,
 		}).render(w, r, session)
-	default:
-		slog.ErrorContext(ctx, "invalid credential type", "credential type", registrationFlow.CredentialType)
+		return
 	}
+
+	addCookies(w, kratosRespHeader.Cookie)
+	setHeadersForReplaceBody(w, "/auth/registration")
+	views.profile.addParams(map[string]any{
+		"RegistrationFlowID": registrationFlow.FlowID,
+		"CsrfToken":          registrationFlow.CsrfToken,
+		"Traits":             registrationFlow.Traits,
+		"PasskeyCreateData":  registrationFlow.PasskeyCreateData,
+	}).render(w, r, session)
 }

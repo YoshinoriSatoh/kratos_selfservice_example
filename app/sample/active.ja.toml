@@ -21,6 +21,11 @@ other = """
         申し訳ございません、エラーが発生しました。お手数ですがログインを始めからやり直してください。\n\
         {{.Host}}/auth/login
         """
+        
+[ERR_LOGOUT_DEFAULT]
+other = """
+        申し訳ございません、エラーが発生しました。
+        """
 
 [ERR_RECOVERY_DEFAULT]
 other = """

@@ -111,7 +111,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 		},
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "update verification error", "err", err.Error())
+		slog.ErrorContext(ctx, "update verification error", "err", err.Error())
 		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
@@ -130,7 +130,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 		Refresh: true,
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "update verification error", "err", err.Error())
+		slog.ErrorContext(ctx, "update verification error", "err", err.Error())
 		views.verificationCode.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}

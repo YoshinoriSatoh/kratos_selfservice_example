@@ -108,6 +108,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 
 	if updateLoginFlowResp.RedirectBrowserTo != "" {
+		slog.DebugContext(ctx, "redirect occured", "RedirectBrowserTo", updateLoginFlowResp.RedirectBrowserTo)
 		// w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
 		redirect(w, r, updateLoginFlowResp.RedirectBrowserTo)
 		return

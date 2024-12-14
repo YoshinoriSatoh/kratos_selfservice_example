@@ -29,7 +29,7 @@ echo $responseCreateRegistrationFlow | jq
 actionUrl=$(echo $responseCreateRegistrationFlow | jq -r '.ui.action')
 csrfToken=$(echo $responseCreateRegistrationFlow | jq -r '.ui.nodes[] | select(.attributes.name=="csrf_token") | .attributes.value') 
 
-echo "\n\n\n------------- [update registration flow (one-step)] -------------"
+echo "\n\n\n------------- [update registration flow (step one: profile)] -------------"
 responseUpdateRegistrationFlow=$(curl -v -s -X POST \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \
@@ -38,7 +38,7 @@ responseUpdateRegistrationFlow=$(curl -v -s -X POST \
   "$actionUrl") 
 echo $responseUpdateRegistrationFlow | jq
 
-echo "\n\n\n------------- [update registration flow (two-step)] -------------"
+echo "\n\n\n------------- [update registration flow (step two: credential)] -------------"
 responseUpdateRegistrationFlow=$(curl -v -s -X POST \
   -c .session_cookie -b .session_cookie \
   -H "Accept: application/json" \

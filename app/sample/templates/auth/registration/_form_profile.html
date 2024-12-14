@@ -1,0 +1,82 @@
+{{define "auth/registration/_form_profile.html"}}
+
+<form 
+  id="registration-form"
+  {{ if eq .Method "profile" }}
+  hx-post="/auth/registration/profile?flow={{.RegistrationFlowID}}" 
+  {{ else if eq .Method "oidc" }}
+  hx-post="/auth/registration/credenail/oidc?flow={{.RegistrationFlowID}}" 
+  hx-vals='{"provider": "{{.Provider}}"}'
+  {{ end }}
+  hx-swap="outerHTML" 
+  hx-target="this"
+>
+  <input
+    name="csrf_token"
+    type="hidden"
+    value="{{.CsrfToken}}"
+  />
+
+  <div class="my-6">
+    {{ template "components/_input.html" dict 
+      "type" "email" 
+      "name" "traits.email" 
+      "label" "メールアドレス" 
+      "value" .Traits.Email 
+      "placeholder" "john.doe@company.com" 
+      "validationErrorMessage" .ValidationFieldError.Email.Message 
+    }}
+  </div>
+
+  <div class="grid gap-6 mb-6 md:grid-cols-2">
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.lastname" 
+      "label" "性" 
+      "value" .Traits.Lastname 
+      "validationErrorMessage" .ValidationFieldError.Lastname.Message 
+    }}
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.firstname" 
+      "label" "名" 
+      "value" .Traits.Firstname 
+      "validationErrorMessage" .ValidationFieldError.Firstname.Message 
+    }}
+  </div>
+  <div class="mb-6">
+    {{ template "components/_input.html" dict 
+      "type" "text" 
+      "name" "traits.nickname" 
+      "label" "ニックネーム" 
+      "value" .Traits.Nickname 
+      "validationErrorMessage" .ValidationFieldError.Nickname.Message 
+    }}
+  </div>
+  <div class="mb-6">
+    {{ template "components/_input_date.html" dict 
+      "type" "text" 
+      "name" "birthdate" 
+      "label" "生年月日" 
+      "year" .BirthdateYear
+      "month" .BirthdateMonth
+      "day" .BirthdateDay
+      "validationErrorMessage" .ValidationFieldError.Birthdate.Message 
+    }}
+  </div>
+
+  <div class="mx-auto text-center">
+    <button 
+      type="submit" 
+      class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+    >次へ</button>
+  </div>
+  
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
+
+</form>
+{{end}}

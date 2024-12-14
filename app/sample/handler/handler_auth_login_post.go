@@ -142,7 +142,7 @@ func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
 					Header: kratosReqHeaderForNext,
 				})
 				if err != nil {
-					slog.DebugContext(ctx, "get verification error", "err", err.Error())
+					slog.ErrorContext(ctx, "get verification error", "err", err.Error())
 					views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 					return
 				}

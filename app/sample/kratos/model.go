@@ -97,7 +97,6 @@ func (s *Session) NeedLoginWhenPrivilegedAccess() bool {
 // --------------------------------------------------------------------------
 type RegistrationFlow struct {
 	FlowID             string
-	CredentialType     CredentialsType
 	OidcProvider       OidcProvider
 	Traits             Traits
 	PasskeyCreateData  string
@@ -179,21 +178,21 @@ type uiContainer struct {
 	Nodes    []uiNode `json:"nodes"`
 }
 
-type verificationFlow struct {
-	Ui uiContainer `json:"ui"`
-}
+// type verificationFlow struct {
+// 	Ui uiContainer `json:"ui"`
+// }
 
-type loginFlow struct {
-	Ui uiContainer `json:"ui"`
-}
+// type loginFlow struct {
+// 	Ui uiContainer `json:"ui"`
+// }
 
-type recoveryFlow struct {
-	Ui uiContainer `json:"ui"`
-}
+// type recoveryFlow struct {
+// 	Ui uiContainer `json:"ui"`
+// }
 
-type settingsFlow struct {
-	Ui uiContainer `json:"ui"`
-}
+// type settingsFlow struct {
+// 	Ui uiContainer `json:"ui"`
+// }
 
 type ErrorUiMessages []ErrorUiMessage
 
@@ -256,17 +255,13 @@ type continueWith struct {
 	Flow   continueWithFlow `json:"flow"`
 }
 
-type CredentialsType string
-
-const (
-	CredentialsTypePassword = CredentialsType("password")
-	CredentialsTypeOidc     = CredentialsType("oidc")
-	CredentialsTypePasskey  = CredentialsType("passkey")
-)
-
 type OidcProvider string
 
 const (
 	OidcProviderGoogle = OidcProvider("google")
 	OidcProviderGithub = OidcProvider("github")
 )
+
+func (p *OidcProvider) Provided() bool {
+	return *p != OidcProvider("")
+}

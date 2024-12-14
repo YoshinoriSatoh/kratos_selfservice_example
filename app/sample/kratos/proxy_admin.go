@@ -26,8 +26,12 @@ func AdminGetIdentity(ctx context.Context, r AdminGetIdentityRequest) (*Identity
 		Path:   fmt.Sprintf("%s/%s", PATH_ADMIN_LIST_IDENTITIES, r.ID),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "AdminGetIdentity", "requestKratosAdmin error", err)
-		return &Identity{}, err
+		if kratosResp.StatusCode == 404 {
+			slog.ErrorContext(ctx, "AdminGetIdentity", "requestKratosAdmin error", err)
+			return &Identity{}, nil
+		} else {
+			return &Identity{}, err
+		}
 	}
 
 	var identity Identity

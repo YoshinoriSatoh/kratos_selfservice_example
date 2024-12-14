@@ -100,31 +100,26 @@ func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (Get
 	}
 
 	// create response
-	var credentialsType CredentialsType
 	var oidcProvider OidcProvider
 	if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback") {
-		credentialsType = CredentialsTypeOidc
 		if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback/google") {
 			oidcProvider = OidcProviderGoogle
 		} else if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback/github") {
 			oidcProvider = OidcProviderGithub
 		}
-	} else {
-		credentialsType = CredentialsTypePassword
 	}
 	response := GetRegistrationFlowResponse{
 		Header: kratosResp.Header,
 		RegistrationFlow: RegistrationFlow{
-			FlowID:         kratosRespBody.ID,
-			CsrfToken:      getCsrfTokenFromFlowUi(kratosRespBody.Ui),
-			CredentialType: credentialsType,
-			OidcProvider:   oidcProvider,
+			FlowID:       kratosRespBody.ID,
+			CsrfToken:    getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			OidcProvider: oidcProvider,
 		},
 	}
-	if credentialsType == CredentialsTypeOidc {
+	if oidcProvider.Provided() {
 		// Set to response the traits that was got from OIDC provider if OIDC callback
 		setTraitsFromUiNodes(&response.RegistrationFlow.Traits, kratosRespBody.Ui.Nodes)
-	} else if credentialsType == CredentialsTypePasskey {
+	} else {
 		response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
 	}
 
@@ -172,29 +167,28 @@ func CreateRegistrationFlow(ctx context.Context, r CreateRegistrationFlowRequest
 	}
 
 	// create response
-	var credentialsType CredentialsType
-	var oidcProvider OidcProvider
-	if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback") {
-		credentialsType = CredentialsTypeOidc
-		if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback/google") {
-			oidcProvider = OidcProviderGoogle
-		} else if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback/github") {
-			oidcProvider = OidcProviderGithub
-		}
-	} else {
-		credentialsType = CredentialsTypePassword
-	}
+	// var credentialsType CredentialsType
+	// var oidcProvider OidcProvider
+	// if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback") {
+	// 	credentialsType = CredentialsTypeOidc
+	// 	if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback/google") {
+	// 		oidcProvider = OidcProviderGoogle
+	// 	} else if strings.Contains(kratosRespBody.RequestUrl, "self-service/methods/oidc/callback/github") {
+	// 		oidcProvider = OidcProviderGithub
+	// 	}
+	// } else {
+	// 	credentialsType = CredentialsTypePassword
+	// }
 	response := CreateRegistrationFlowResponse{
 		Header: kratosResp.Header,
 		RegistrationFlow: RegistrationFlow{
-			FlowID:         kratosRespBody.ID,
-			CsrfToken:      getCsrfTokenFromFlowUi(kratosRespBody.Ui),
-			CredentialType: credentialsType,
-			OidcProvider:   oidcProvider,
+			FlowID:       kratosRespBody.ID,
+			CsrfToken:    getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			OidcProvider: OidcProvider(""),
 		},
 	}
 	// if credentialsType == CredentialsTypePasskey {
-	response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
+	// response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
 	// }
 
 	return response, kratosReqHeaderForNext, nil
@@ -212,6 +206,7 @@ type UpdateRegistrationFlowRequest struct {
 type UpdateRegistrationFlowRequestBody struct {
 	CsrfToken       string `json:"csrf_token"`
 	Method          string `json:"method"`
+	Screen          string `json:"screen"`
 	Traits          Traits `json:"traits,omitempty"`
 	Password        string `json:"password,omitempty"`
 	Provider        string `json:"provider,omitempty"`
@@ -240,14 +235,22 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 	// valiate parameter
 	if r.Body.Method == "password" {
 		if r.Body.Password == "" {
+			slog.ErrorContext(ctx, "missing password in body", "method", r.Body.Method)
 			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("missing password in body")
+		}
+	} else if r.Body.Method == "profile" {
+		if r.Body.Screen != "credential-selection" {
+			slog.ErrorContext(ctx, "invalid screen in body", "method", r.Body.Method, "screen", r.Body.Screen)
+			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("invalid screen in body")
 		}
 	} else if r.Body.Method == "oidc" {
 		if r.Body.Provider == "" {
+			slog.ErrorContext(ctx, "missing provider in body", "method", r.Body.Method)
 			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("missing provider in body")
 		}
 	} else if r.Body.Method == "passkey" {
 		if r.Body.PasskeyRegister == "" {
+			slog.ErrorContext(ctx, "missing passkey register in body", "method", r.Body.Method)
 			return UpdateRegistrationFlowResponse{}, r.Header, errors.New("missing passkey register in body")
 		}
 	} else {
@@ -283,7 +286,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 			duplicateIdentifier = getDuplicateIdentifierFromUi(kratosRespBadRequestBody.Ui)
 		} else {
 			slog.ErrorContext(ctx, "UpdateRegistrationFlow", "requestKratosPublic error", err)
-			return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, nil
+			return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 		}
 	}
 
@@ -291,7 +294,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 	var kratosRespBody kratosUpdateRegisrationFlowPasswordRespnseBody
 	if err := json.Unmarshal(kratosResp.BodyBytes, &kratosRespBody); err != nil {
 		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
-		return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, nil
+		return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
 	// Create response

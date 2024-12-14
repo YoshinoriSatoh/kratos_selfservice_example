@@ -21,7 +21,7 @@ import (
 type view struct {
 	Path   string         `json:"path"`
 	Params map[string]any `json:"params"`
-	viewError
+	// viewError
 }
 
 func newView(path string) *view {
@@ -57,7 +57,7 @@ func (v *view) addParams(p map[string]any) *view {
 func (v *view) toQueryParam() string {
 	jsonStr, err := json.Marshal(*v)
 	if err != nil {
-		slog.Error("json Marshal error in view", err)
+		slog.Error("json Marshal error in view", "err", err)
 	}
 	return base64.URLEncoding.EncodeToString(jsonStr)
 }
@@ -66,7 +66,7 @@ func viewFromQueryParam(base64str string) *view {
 	var v view
 	jsonStr, err := base64.URLEncoding.DecodeString(base64str)
 	if err != nil {
-		slog.Error("json Marshal error in view", err)
+		slog.Error("json Marshal error in view", "err", err)
 	}
 	json.Unmarshal([]byte(jsonStr), &v)
 	return &v
@@ -250,13 +250,13 @@ type validationFieldError struct {
 	Message string
 }
 
-type validationFieldErrors map[string]validationFieldError
+// type validationFieldErrors map[string]validationFieldError
 
-func (e *validationFieldErrors) toViewParams() map[string]any {
-	return map[string]any{
-		"ValidationFieldError": e,
-	}
-}
+// func (e *validationFieldErrors) toViewParams() map[string]any {
+// 	return map[string]any{
+// 		"ValidationFieldError": e,
+// 	}
+// }
 
 // ---------------------- msg ----------------------
 

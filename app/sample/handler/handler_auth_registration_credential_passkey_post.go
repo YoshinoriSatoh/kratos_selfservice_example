@@ -11,10 +11,10 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// POST /auth/registration/step-two/passkey
+// POST /auth/registration/credenail/passkey
 // --------------------------------------------------------------------------
-// Request parameters for handlePostAuthRegistrationStepTwoPasskey
-type postAuthRegistrationStepTwoPasskeyRequestParams struct {
+// Request parameters for handlePostAuthRegistrationCredentialPasskey
+type postAuthRegistrationCredentialPasskeyRequestParams struct {
 	FlowID          string        `validate:"required,uuid4"`
 	CsrfToken       string        `validate:"required"`
 	Traits          kratos.Traits `validate:"required"`
@@ -22,8 +22,8 @@ type postAuthRegistrationStepTwoPasskeyRequestParams struct {
 }
 
 // Extract parameters from http request
-func newpostAuthRegistrationStepTwoPasskeyRequestParams(r *http.Request) *postAuthRegistrationStepTwoPasskeyRequestParams {
-	return &postAuthRegistrationStepTwoPasskeyRequestParams{
+func newpostAuthRegistrationCredentialPasskeyRequestParams(r *http.Request) *postAuthRegistrationCredentialPasskeyRequestParams {
+	return &postAuthRegistrationCredentialPasskeyRequestParams{
 		FlowID:    r.URL.Query().Get("flow"),
 		CsrfToken: r.PostFormValue("csrf_token"),
 		Traits: kratos.Traits{
@@ -38,7 +38,7 @@ func newpostAuthRegistrationStepTwoPasskeyRequestParams(r *http.Request) *postAu
 }
 
 // Return parameters that can refer in view template
-func (p *postAuthRegistrationStepTwoPasskeyRequestParams) toViewParams() map[string]any {
+func (p *postAuthRegistrationCredentialPasskeyRequestParams) toViewParams() map[string]any {
 	year, month, day := parseDate(p.Traits.Birthdate)
 	return map[string]any{
 		"RegistrationFlowID": p.FlowID,
@@ -53,7 +53,7 @@ func (p *postAuthRegistrationStepTwoPasskeyRequestParams) toViewParams() map[str
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthRegistrationStepTwoPasskeyRequestParams) validate() *viewError {
+func (params *postAuthRegistrationCredentialPasskeyRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
 
 	// Individual validations write here that cannot validate in common validations
@@ -62,12 +62,12 @@ func (params *postAuthRegistrationStepTwoPasskeyRequestParams) validate() *viewE
 }
 
 // Views
-type getAuthRegistrationStepTwoPasskeyViews struct {
+type getAuthRegistrationCredentialPasskeyViews struct {
 	form *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthRegistrationStepTwoPasskey(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationStepTwoPasskeyRequestParams, getAuthRegistrationStepTwoPasskeyViews, *viewError, error) {
+func prepareGetAuthRegistrationCredentialPasskey(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationCredentialPasskeyRequestParams, getAuthRegistrationCredentialPasskeyViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -75,9 +75,9 @@ func prepareGetAuthRegistrationStepTwoPasskey(w http.ResponseWriter, r *http.Req
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_REGISTRATION_DEFAULT",
 	}))
-	reqParams := newpostAuthRegistrationStepTwoPasskeyRequestParams(r)
-	views := getAuthRegistrationStepTwoPasskeyViews{
-		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "passkey"}),
+	reqParams := newpostAuthRegistrationCredentialPasskeyRequestParams(r)
+	views := getAuthRegistrationCredentialPasskeyViews{
+		form: newView("auth/registration/_form_credenail_passkey.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -89,14 +89,14 @@ func prepareGetAuthRegistrationStepTwoPasskey(w http.ResponseWriter, r *http.Req
 	return reqParams, views, baseViewError, nil
 }
 
-func (p *Provider) handlePostAuthRegistrationStepTwoPasskey(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthRegistrationCredentialPasskey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepTwoPasskey(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthRegistrationCredentialPasskey(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepTwoPasskey failed", "err", err)
+		slog.ErrorContext(ctx, "prepareGetAuthRegistrationCredentialPasskey failed", "err", err)
 		return
 	}
 
@@ -140,7 +140,7 @@ func (p *Provider) handlePostAuthRegistrationStepTwoPasskey(w http.ResponseWrite
 		Header: kratosReqHeaderForNext,
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "update verification error", "err", err.Error())
+		slog.ErrorContext(ctx, "update verification error", "err", err.Error())
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}

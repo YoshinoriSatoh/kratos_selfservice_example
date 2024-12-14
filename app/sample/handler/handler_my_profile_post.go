@@ -196,23 +196,25 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// update session
+	whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
+		Header: kratosReqHeaderForNext,
+	})
+	session = whoamiResp.Session
+
 	if kratosResp.VerificationFlowID != "" {
 		// transition to verification flow from settings flow
 
 		// get verification flow
 		getVerificationFlowResp, _, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
 			FlowID: kratosResp.VerificationFlowID,
-			Header: kratosReqHeaderForNext,
+			Header: makeDefaultKratosRequestHeader(r),
 		})
 		if err != nil {
-			slog.DebugContext(ctx, "get verification error", "err", err.Error())
+			slog.ErrorContext(ctx, "get verification error", "err", err.Error())
 			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
-
-		whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-			Header: kratosReqHeaderForNext,
-		})
 
 		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
 			Header: makeDefaultKratosRequestHeader(r),
@@ -228,10 +230,10 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
 			"Information":    "プロフィールが更新されました。",
 			"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
-			"Email":          whoamiResp.Session.Identity.Traits.Email,
-			"Firstname":      whoamiResp.Session.Identity.Traits.Firstname,
-			"Lastname":       whoamiResp.Session.Identity.Traits.Lastname,
-			"Nickname":       whoamiResp.Session.Identity.Traits.Nickname,
+			"Email":          session.Identity.Traits.Email,
+			"Firstname":      session.Identity.Traits.Firstname,
+			"Lastname":       session.Identity.Traits.Lastname,
+			"Nickname":       session.Identity.Traits.Nickname,
 			"BirthdateYear":  year,
 			"BirthdateMonth": month,
 			"BirthdateDay":   day,

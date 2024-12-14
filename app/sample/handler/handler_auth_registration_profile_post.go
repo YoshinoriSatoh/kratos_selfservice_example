@@ -11,18 +11,18 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// POST /auth/registration/step-one
+// POST /auth/registration/profile
 // --------------------------------------------------------------------------
-// Request parameters for handlePostAuthRegistrationStepOne
-type postAuthRegistrationStepOneRequestParams struct {
+// Request parameters for handlePostAuthRegistrationProfile
+type postAuthRegistrationProfileRequestParams struct {
 	FlowID    string        `validate:"required,uuid4"`
 	CsrfToken string        `validate:"required"`
 	Traits    kratos.Traits `validate:"required"`
 }
 
 // Extract parameters from http request
-func newPostAuthRegistrationStepOneRequestParams(r *http.Request) *postAuthRegistrationStepOneRequestParams {
-	return &postAuthRegistrationStepOneRequestParams{
+func newPostAuthRegistrationProfileRequestParams(r *http.Request) *postAuthRegistrationProfileRequestParams {
+	return &postAuthRegistrationProfileRequestParams{
 		FlowID:    r.URL.Query().Get("flow"),
 		CsrfToken: r.PostFormValue("csrf_token"),
 		Traits: kratos.Traits{
@@ -36,7 +36,7 @@ func newPostAuthRegistrationStepOneRequestParams(r *http.Request) *postAuthRegis
 }
 
 // Return parameters that can refer in view template
-func (p *postAuthRegistrationStepOneRequestParams) toViewParams() map[string]any {
+func (p *postAuthRegistrationProfileRequestParams) toViewParams() map[string]any {
 	year, month, day := parseDate(p.Traits.Birthdate)
 	return map[string]any{
 		"RegistrationFlowID": p.FlowID,
@@ -51,7 +51,7 @@ func (p *postAuthRegistrationStepOneRequestParams) toViewParams() map[string]any
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthRegistrationStepOneRequestParams) validate() *viewError {
+func (params *postAuthRegistrationProfileRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
 
 	for k := range viewError.validationFieldErrors {
@@ -68,13 +68,13 @@ func (params *postAuthRegistrationStepOneRequestParams) validate() *viewError {
 }
 
 // Views
-type getAuthRegistrationStepOneViews struct {
-	form *view
-	code *view
+type getAuthRegistrationProfileViews struct {
+	formProfile    *view
+	formCredential *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthRegistrationStepOne(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationStepOneRequestParams, getAuthRegistrationStepOneViews, *viewError, error) {
+func preparePostAuthRegistrationProfile(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationProfileRequestParams, getAuthRegistrationProfileViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -82,15 +82,15 @@ func prepareGetAuthRegistrationStepOne(w http.ResponseWriter, r *http.Request) (
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_REGISTRATION_DEFAULT",
 	}))
-	reqParams := newPostAuthRegistrationStepOneRequestParams(r)
-	views := getAuthRegistrationStepOneViews{
-		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "password"}),
-		code: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
+	reqParams := newPostAuthRegistrationProfileRequestParams(r)
+	views := getAuthRegistrationProfileViews{
+		formProfile:    newView("auth/registration/_form_profile.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "profile"}),
+		formCredential: newView("auth/registration/_form_credential.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		views.formProfile.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -98,50 +98,50 @@ func prepareGetAuthRegistrationStepOne(w http.ResponseWriter, r *http.Request) (
 }
 
 // POST /auth/registration
-func (p *Provider) handlePostAuthRegistrationStepOne(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthRegistrationProfile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepOne(w, r)
+	reqParams, views, baseViewError, err := preparePostAuthRegistrationProfile(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepOne failed", "err", err)
+		slog.ErrorContext(ctx, "preparePostAuthRegistrationProfile failed", "err", err)
 		return
 	}
 
 	// update Registration Flow
-	updateRegistrationFlowResp, kratosReqHeaderForNext, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+	updateRegistrationFlowResp, _, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
 			CsrfToken: reqParams.CsrfToken,
-			Method:    "password",
+			Method:    "profile",
+			Screen:    "credential-selection",
 			Traits:    reqParams.Traits,
 		},
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "update registration error", "err", err.Error())
-		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "update registration error", "err", err.Error())
+		views.formProfile.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// get verification flow
-	getVerificationFlowResp, kratosReqHeaderForNext, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
-		FlowID: updateRegistrationFlowResp.VerificationFlowID,
-		Header: kratosReqHeaderForNext,
+	// get latest registration flow
+	// kratosReqHeaderForNext should return the header of UpdateRegistrationFlow, so do not get it here
+	getRegistrationFlowResp, _, err := kratos.GetRegistrationFlow(ctx, kratos.GetRegistrationFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "get verification error", "err", err.Error())
-		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "get registration error", "GetRegistrationFlow error", err)
 		return
 	}
 
 	// render verification code page (replace <body> tag and push url)
-	addCookies(w, getVerificationFlowResp.Header.Cookie)
-	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
-	views.code.addParams(map[string]any{
-		"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
-		"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
-		"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
+	addCookies(w, updateRegistrationFlowResp.Header.Cookie)
+	views.formCredential.addParams(map[string]any{
+		"RegistrationFlowID": reqParams.FlowID,
+		"CsrfToken":          reqParams.CsrfToken,
+		"PasskeyCreateData":  getRegistrationFlowResp.RegistrationFlow.PasskeyCreateData,
 	}).render(w, r, session)
 }

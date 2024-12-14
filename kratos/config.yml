@@ -107,7 +107,7 @@ selfservice:
         oidc:
           hooks:
             - hook: session 
-          default_browser_return_url: http://localhost:3000/auth/registration/step-two/oidc
+          default_browser_return_url: http://localhost:3000/auth/registration/credenail/oidc
       enable_legacy_one_step: false
     verification:
       enabled: true

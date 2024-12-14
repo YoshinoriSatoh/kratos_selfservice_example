@@ -11,10 +11,10 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// POST /auth/registration/step-two/oidc
+// POST /auth/registration/credenail/oidc
 // --------------------------------------------------------------------------
-// Request parameters for handlePostAuthRegistrationStepTwoOidc
-type postAuthRegistrationStepTwoOidcRequestParams struct {
+// Request parameters for handlePostAuthRegistrationCredentialOidc
+type postAuthRegistrationCredentialOidcRequestParams struct {
 	FlowID    string        `validate:"required,uuid4"`
 	CsrfToken string        `validate:"required"`
 	Provider  string        `validate:"required"`
@@ -22,8 +22,8 @@ type postAuthRegistrationStepTwoOidcRequestParams struct {
 }
 
 // Extract parameters from http request
-func newpostAuthRegistrationStepTwoOidcRequestParams(r *http.Request) *postAuthRegistrationStepTwoOidcRequestParams {
-	return &postAuthRegistrationStepTwoOidcRequestParams{
+func newpostAuthRegistrationCredentialOidcRequestParams(r *http.Request) *postAuthRegistrationCredentialOidcRequestParams {
+	return &postAuthRegistrationCredentialOidcRequestParams{
 		FlowID:    r.URL.Query().Get("flow"),
 		CsrfToken: r.PostFormValue("csrf_token"),
 		Provider:  r.PostFormValue("provider"),
@@ -38,7 +38,7 @@ func newpostAuthRegistrationStepTwoOidcRequestParams(r *http.Request) *postAuthR
 }
 
 // Return parameters that can refer in view template
-func (p *postAuthRegistrationStepTwoOidcRequestParams) toViewParams() map[string]any {
+func (p *postAuthRegistrationCredentialOidcRequestParams) toViewParams() map[string]any {
 	year, month, day := parseDate(p.Traits.Birthdate)
 	return map[string]any{
 		"RegistrationFlowID": p.FlowID,
@@ -53,7 +53,7 @@ func (p *postAuthRegistrationStepTwoOidcRequestParams) toViewParams() map[string
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthRegistrationStepTwoOidcRequestParams) validate() *viewError {
+func (params *postAuthRegistrationCredentialOidcRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
 
 	// Individual validations write here that cannot validate in common validations
@@ -62,12 +62,12 @@ func (params *postAuthRegistrationStepTwoOidcRequestParams) validate() *viewErro
 }
 
 // Views
-type getAuthRegistrationStepTwoOidcViews struct {
+type getAuthRegistrationCredentialOidcViews struct {
 	form *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthRegistrationStepTwoOidc(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationStepTwoOidcRequestParams, getAuthRegistrationStepTwoOidcViews, *viewError, error) {
+func prepareGetAuthRegistrationCredentialOidc(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationCredentialOidcRequestParams, getAuthRegistrationCredentialOidcViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -75,9 +75,9 @@ func prepareGetAuthRegistrationStepTwoOidc(w http.ResponseWriter, r *http.Reques
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_REGISTRATION_DEFAULT",
 	}))
-	reqParams := newpostAuthRegistrationStepTwoOidcRequestParams(r)
-	views := getAuthRegistrationStepTwoOidcViews{
-		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
+	reqParams := newpostAuthRegistrationCredentialOidcRequestParams(r)
+	views := getAuthRegistrationCredentialOidcViews{
+		form: newView("auth/registration/_form_profile.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
 	}
 
 	// validate request parameters
@@ -89,14 +89,14 @@ func prepareGetAuthRegistrationStepTwoOidc(w http.ResponseWriter, r *http.Reques
 	return reqParams, views, baseViewError, nil
 }
 
-func (p *Provider) handlePostAuthRegistrationStepTwoOidc(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthRegistrationCredentialOidc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepTwoOidc(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthRegistrationCredentialOidc(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepTwoOidc failed", "err", err)
+		slog.ErrorContext(ctx, "prepareGetAuthRegistrationCredentialOidc failed", "err", err)
 		return
 	}
 

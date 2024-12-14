@@ -11,9 +11,9 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// POST /auth/registration/step-two/password
+// POST /auth/registration/credenail/password
 // --------------------------------------------------------------------------
-// Request parameters for handlePostAuthRegistrationStepTwoPassword
+// Request parameters for handlePostAuthRegistrationCredentialPassword
 type postAuthRegistrationPasswordRequestParams struct {
 	FlowID               string        `validate:"required,uuid4"`
 	CsrfToken            string        `validate:"required"`
@@ -74,13 +74,13 @@ func (params *postAuthRegistrationPasswordRequestParams) validate() *viewError {
 }
 
 // Views
-type getAuthRegistrationStepTwoPasswordViews struct {
+type getAuthRegistrationCredentialPasswordViews struct {
 	form *view
 	code *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthRegistrationStepTwoPassword(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationPasswordRequestParams, getAuthRegistrationStepTwoPasswordViews, *viewError, error) {
+func prepareGetAuthRegistrationCredentialPassword(w http.ResponseWriter, r *http.Request) (*postAuthRegistrationPasswordRequestParams, getAuthRegistrationCredentialPasswordViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -89,8 +89,8 @@ func prepareGetAuthRegistrationStepTwoPassword(w http.ResponseWriter, r *http.Re
 		MessageID: "ERR_REGISTRATION_DEFAULT",
 	}))
 	reqParams := newPostAuthRegistrationPasswordRequestParams(r)
-	views := getAuthRegistrationStepTwoPasswordViews{
-		form: newView("auth/registration/_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "password"}),
+	views := getAuthRegistrationCredentialPasswordViews{
+		form: newView("auth/registration/_form_credential_password.html").addParams(reqParams.toViewParams()),
 		code: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
 	}
 
@@ -104,14 +104,14 @@ func prepareGetAuthRegistrationStepTwoPassword(w http.ResponseWriter, r *http.Re
 }
 
 // POST /auth/registration
-func (p *Provider) handlePostAuthRegistrationStepTwoPassword(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthRegistrationCredentialPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthRegistrationStepTwoPassword(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthRegistrationCredentialPassword(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthRegistrationStepTwoPassword failed", "err", err)
+		slog.ErrorContext(ctx, "prepareGetAuthRegistrationCredentialPassword failed", "err", err)
 		return
 	}
 
@@ -127,7 +127,7 @@ func (p *Provider) handlePostAuthRegistrationStepTwoPassword(w http.ResponseWrit
 		},
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "update registration error", "err", err.Error())
+		slog.ErrorContext(ctx, "update registration error", "err", err.Error())
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
@@ -138,7 +138,7 @@ func (p *Provider) handlePostAuthRegistrationStepTwoPassword(w http.ResponseWrit
 		Header: kratosReqHeaderForNext,
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "get verification error", "err", err.Error())
+		slog.ErrorContext(ctx, "get verification error", "err", err.Error())
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}

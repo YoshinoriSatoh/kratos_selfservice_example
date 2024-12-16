@@ -13,8 +13,8 @@ import (
 // --------------------------------------------------------------------------
 // POST /auth/login
 // --------------------------------------------------------------------------
-// Request parameters for handlePostAuthLogin
-type postAuthLoginRequestParams struct {
+// Request parameters for handlePostAuthLoginPassword
+type postAuthLoginPasswordRequestParams struct {
 	FlowID     string `validate:"uuid4"`
 	CsrfToken  string `validate:"required"`
 	Identifier string `validate:"required,email" ja:"メールアドレス"`
@@ -24,8 +24,8 @@ type postAuthLoginRequestParams struct {
 }
 
 // Extract parameters from http request
-func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginRequestParams {
-	return &postAuthLoginRequestParams{
+func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginPasswordRequestParams {
+	return &postAuthLoginPasswordRequestParams{
 		FlowID:     r.URL.Query().Get("flow"),
 		Render:     r.PostFormValue("render"),
 		Hook:       r.PostFormValue("hook"),
@@ -36,7 +36,7 @@ func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginRequestParams 
 }
 
 // Return parameters that can refer in view template
-func (p *postAuthLoginRequestParams) toViewParams() map[string]any {
+func (p *postAuthLoginPasswordRequestParams) toViewParams() map[string]any {
 	return map[string]any{
 		"LoginFlowID": p.FlowID,
 		"Render":      p.Render,
@@ -50,7 +50,7 @@ func (p *postAuthLoginRequestParams) toViewParams() map[string]any {
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthLoginRequestParams) validate() *viewError {
+func (params *postAuthLoginPasswordRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(params))
 
 	// Individual validations write here that cannot validate in common validations
@@ -59,13 +59,13 @@ func (params *postAuthLoginRequestParams) validate() *viewError {
 }
 
 // Views
-type getAuthLoginPostViews struct {
+type getAuthLoginPasswordPostViews struct {
 	index *view
 	top   *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthLoginPost(w http.ResponseWriter, r *http.Request) (*postAuthLoginRequestParams, getAuthLoginPostViews, *viewError, error) {
+func prepareGetAuthLoginPasswordPost(w http.ResponseWriter, r *http.Request) (*postAuthLoginPasswordRequestParams, getAuthLoginPasswordPostViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -74,7 +74,7 @@ func prepareGetAuthLoginPost(w http.ResponseWriter, r *http.Request) (*postAuthL
 		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
 	reqParams := newPostAuthLoginRequestParams(r)
-	views := getAuthLoginPostViews{
+	views := getAuthLoginPasswordPostViews{
 		index: newView("auth/login/_form.html").addParams(reqParams.toViewParams()),
 		top:   newView("top/index.html").addParams(reqParams.toViewParams()),
 	}
@@ -88,12 +88,12 @@ func prepareGetAuthLoginPost(w http.ResponseWriter, r *http.Request) (*postAuthL
 	return reqParams, views, baseViewError, nil
 }
 
-func (p *Provider) handlePostAuthLogin(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthLoginPost(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthLoginPasswordPost(w, r)
 	if err != nil {
 		slog.ErrorContext(ctx, "prepareGetAuthLoginPost failed", "err", err)
 		return

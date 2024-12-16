@@ -62,7 +62,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 
 	// Authentication Login
 	mux.Handle("GET /auth/login", p.baseMiddleware(p.handleGetAuthLogin))
-	mux.Handle("POST /auth/login", p.baseMiddleware(p.handlePostAuthLogin))
+	mux.Handle("POST /auth/login/password", p.baseMiddleware(p.handlePostAuthLoginPassword))
 	mux.Handle("POST /auth/login/oidc", p.baseMiddleware(p.handlePostAuthLoginOidc))
 	mux.Handle("POST /auth/login/passkey", p.baseMiddleware(p.handlePostAuthLoginPasskey))
 

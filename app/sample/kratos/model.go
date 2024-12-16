@@ -265,3 +265,10 @@ const (
 func (p *OidcProvider) Provided() bool {
 	return *p != OidcProvider("")
 }
+
+type Aal string
+
+const (
+	AalAal1             = Aal("aal1")
+	AalHighestAvailable = Aal("highest_available")
+)

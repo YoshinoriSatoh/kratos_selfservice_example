@@ -93,7 +93,12 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create or get registration Flow
-	loginFlow, kratosRespHeader, _, err := kratos.CreateOrGetLoginFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID, isAuthenticated(session))
+	loginFlow, kratosRespHeader, _, err := kratos.CreateOrGetLoginFlow(ctx, kratos.CreateOrGetLoginFlowRequest{
+		FlowID:  reqParams.FlowID,
+		Header:  makeDefaultKratosRequestHeader(r),
+		Refresh: isAuthenticated(session),
+	})
+	//makeDefaultKratosRequestHeader(r), reqParams.FlowID, isAuthenticated(session))
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない
 	if err != nil && loginFlow.DuplicateIdentifier == "" {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)

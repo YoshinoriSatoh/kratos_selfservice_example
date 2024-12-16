@@ -84,7 +84,8 @@ func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (Get
 	// Request to kratos
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_REGISTRATION_FLOW, r.FlowID),
+		Path:   PATH_SELF_SERVICE_GET_REGISTRATION_FLOW,
+		Query:  map[string]string{"id": r.FlowID},
 		Header: r.Header,
 	})
 	if err != nil {
@@ -266,7 +267,8 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 	}
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
-		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW, r.FlowID),
+		Path:      PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW,
+		Query:     map[string]string{"flow": r.FlowID},
 		BodyBytes: bodyBytes,
 		Header:    r.Header,
 	})
@@ -365,7 +367,8 @@ func GetVerificationFlow(ctx context.Context, r GetVerificationFlowRequest) (Get
 	// Request to kratos
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_VERIFICATION_FLOW, r.FlowID),
+		Path:   PATH_SELF_SERVICE_GET_VERIFICATION_FLOW,
+		Query:  map[string]string{"id": r.FlowID},
 		Header: r.Header,
 	})
 	if err != nil {
@@ -489,7 +492,8 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 	}
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
-		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_VERIFICATION_FLOW, r.FlowID),
+		Path:      PATH_SELF_SERVICE_UPDATE_VERIFICATION_FLOW,
+		Query:     map[string]string{"flow": r.FlowID},
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
@@ -524,27 +528,34 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 // --------------------------------------------------------------------------
 // Create or Get Login Flow
 // --------------------------------------------------------------------------
+type CreateOrGetLoginFlowRequest struct {
+	FlowID  string
+	Header  KratosRequestHeader
+	Refresh bool
+}
+
 // CreateOrGetLoginFlow handles the logic for creating or getting a login flow
-func CreateOrGetLoginFlow(ctx context.Context, h KratosRequestHeader, flowID string, refresh bool) (LoginFlow, KratosResponseHeader, KratosRequestHeader, error) {
+func CreateOrGetLoginFlow(ctx context.Context, r CreateOrGetLoginFlowRequest) (LoginFlow, KratosResponseHeader, KratosRequestHeader, error) {
 	var (
 		err              error
 		loginFlow        LoginFlow
 		kratosReqHeader  KratosRequestHeader
 		kratosRespHeader KratosResponseHeader
 	)
-	if flowID == "" {
+	if r.FlowID == "" {
 		var createLoginFlowResp CreateLoginFlowResponse
 		createLoginFlowResp, kratosReqHeader, err = CreateLoginFlow(ctx, CreateLoginFlowRequest{
-			Header:  h,
-			Refresh: refresh,
+			Header:  r.Header,
+			Refresh: r.Refresh,
+			Aal:     Aal(pkgVars.sessionRequiredAal),
 		})
 		kratosRespHeader = createLoginFlowResp.Header
 		loginFlow = createLoginFlowResp.LoginFlow
 	} else {
 		var getLoginFlowResp GetLoginFlowResponse
 		getLoginFlowResp, kratosReqHeader, err = GetLoginFlow(ctx, GetLoginFlowRequest{
-			Header: h,
-			FlowID: flowID,
+			Header: r.Header,
+			FlowID: r.FlowID,
 		})
 		kratosRespHeader = getLoginFlowResp.Header
 		loginFlow = getLoginFlowResp.LoginFlow
@@ -575,7 +586,8 @@ func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowRespo
 	// Request to kratos
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_LOGIN_FLOW, r.FlowID),
+		Path:   PATH_SELF_SERVICE_GET_LOGIN_FLOW,
+		Query:  map[string]string{"id": r.FlowID},
 		Header: r.Header,
 	})
 	if err != nil {
@@ -616,6 +628,7 @@ func GetLoginFlow(ctx context.Context, r GetLoginFlowRequest) (GetLoginFlowRespo
 type CreateLoginFlowRequest struct {
 	Header  KratosRequestHeader
 	Refresh bool
+	Aal     Aal
 	// ReturnTo は application/json では機能しない
 	// https://github.com/ory/kratos/blob/v1.2.0/x/http_secure_redirect.go#L185-L199
 }
@@ -633,14 +646,19 @@ type kratosCreateLoginFlowRespnseBody struct {
 func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLoginFlowResponse, KratosRequestHeader, error) {
 	// Request to kratos
 	path := PATH_SELF_SERVICE_CREATE_LOGIN_FLOW
-	// path = fmt.Sprintf("%s?aal=aal2", path)
+	query := map[string]string{}
 	if r.Refresh {
-		path = fmt.Sprintf("%s?refresh=true", path)
+		query["refresh"] = "true"
 	}
-
+	if r.Aal == AalAal1 {
+		query["aal"] = "aal1"
+	} else if r.Aal == AalHighestAvailable {
+		query["aal"] = "aal2"
+	}
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   path,
+		Query:  query,
 		Header: r.Header,
 	})
 	if err != nil {
@@ -728,7 +746,8 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 	}
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
-		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW, r.FlowID),
+		Path:      PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW,
+		Query:     map[string]string{"flow": r.FlowID},
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
@@ -801,7 +820,8 @@ func Logout(ctx context.Context, r LogoutRequest) (LogoutResponse, KratosRequest
 	// Request to kratos for update logout flow
 	kratosRespUpdateLogoutFlow, KratosRequestHeader, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?flow=%s&token=%s", PATH_SELF_SERVICE_UPDATE_LOGOUT_FLOW, kratosRespBodyCreateLogoutFlow.ID, kratosRespBodyCreateLogoutFlow.LogoutToken),
+		Path:   PATH_SELF_SERVICE_UPDATE_LOGOUT_FLOW,
+		Query:  map[string]string{"flow": kratosRespBodyCreateLogoutFlow.ID, "token": kratosRespBodyCreateLogoutFlow.LogoutToken},
 		Header: r.Header,
 	})
 	if err != nil {
@@ -878,7 +898,8 @@ func GetRecoveryFlow(ctx context.Context, r GetRecoveryFlowRequest) (GetRecovery
 	// Request to kratos
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_RECOVERY_FLOW, r.FlowID),
+		Path:   PATH_SELF_SERVICE_GET_RECOVERY_FLOW,
+		Query:  map[string]string{"id": r.FlowID},
 		Header: r.Header,
 	})
 	if err != nil {
@@ -995,7 +1016,8 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 	}
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
-		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_RECOVERY_FLOW, r.FlowID),
+		Path:      PATH_SELF_SERVICE_UPDATE_RECOVERY_FLOW,
+		Query:     map[string]string{"flow": r.FlowID},
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
@@ -1085,7 +1107,8 @@ func GetSettingsFlow(ctx context.Context, r GetSettingsFlowRequest) (GetSettings
 	// Request to kratos
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
-		Path:   fmt.Sprintf("%s?id=%s", PATH_SELF_SERVICE_GET_SETTINGS_FLOW, r.FlowID),
+		Path:   PATH_SELF_SERVICE_GET_SETTINGS_FLOW,
+		Query:  map[string]string{"id": r.FlowID},
 		Header: r.Header,
 	})
 	if err != nil {
@@ -1210,7 +1233,8 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 	}
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
-		Path:      fmt.Sprintf("%s?flow=%s", PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW, r.FlowID),
+		Path:      PATH_SELF_SERVICE_UPDATE_SETTINGS_FLOW,
+		Query:     map[string]string{"flow": r.FlowID},
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})

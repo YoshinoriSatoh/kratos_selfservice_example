@@ -43,10 +43,10 @@ func init() {
 		},
 	})
 
-	if config.AwsProfile == "" {
+	if config.Local.AwsProfile == "" {
 		smsProvider, err = sms.New(config.Sms.AwsRegion)
 	} else {
-		smsProvider, err = sms.New(config.Sms.AwsRegion, sms.WithProfile(config.AwsProfile))
+		smsProvider, err = sms.New(config.Sms.AwsRegion, sms.WithProfile(config.Local.AwsProfile))
 	}
 	if err != nil {
 		panic(err)

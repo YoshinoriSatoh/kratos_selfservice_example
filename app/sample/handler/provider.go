@@ -20,13 +20,11 @@ type Dependencies struct {
 	Sms *sms.Provider
 }
 
-type NewInput struct {
-	Dependencies Dependencies
-}
+type NewInput struct{}
 
-func New(i NewInput) (*Provider, error) {
+func New(i NewInput, d Dependencies) (*Provider, error) {
 	p := Provider{
-		d: i.Dependencies,
+		d: d,
 	}
 	return &p, nil
 }

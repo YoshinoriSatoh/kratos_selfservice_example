@@ -20,6 +20,7 @@ type KratosRequestHeader struct {
 type kratosRequest struct {
 	Method    string
 	Path      string
+	Query     map[string]string
 	BodyBytes []byte
 	Header    KratosRequestHeader
 }
@@ -72,6 +73,16 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 	req.Header.Set("True-Client-IP", i.Header.ClientIP)
 	// req.Header.Set("X-Forwarded-For", r.RemoteAddr)
 
+	if len(i.Query) > 0 {
+		slog.InfoContext(ctx, "kratos request query", "query", i.Query)
+		query := req.URL.Query()
+		for k, v := range i.Query {
+			query.Add(k, v)
+		}
+		req.URL.RawQuery = query.Encode()
+	}
+
+	slog.DebugContext(ctx, "req", "req", req)
 	slog.DebugContext(ctx, "req", "Cookie", req.Header.Get("Cookie"))
 	client := new(http.Client)
 	resp, err := client.Do(req)

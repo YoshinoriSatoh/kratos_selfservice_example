@@ -97,6 +97,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 		FlowID:  reqParams.FlowID,
 		Header:  makeDefaultKratosRequestHeader(r),
 		Refresh: isAuthenticated(session),
+		Aal:     kratos.Aal1,
 	})
 	//makeDefaultKratosRequestHeader(r), reqParams.FlowID, isAuthenticated(session))
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない

@@ -64,6 +64,7 @@ func (params *postAuthRegistrationCredentialPasskeyRequestParams) validate() *vi
 // Views
 type getAuthRegistrationCredentialPasskeyViews struct {
 	form *view
+	code *view
 }
 
 // collect rendering data and validate request parameters.
@@ -78,6 +79,7 @@ func prepareGetAuthRegistrationCredentialPasskey(w http.ResponseWriter, r *http.
 	reqParams := newpostAuthRegistrationCredentialPasskeyRequestParams(r)
 	views := getAuthRegistrationCredentialPasskeyViews{
 		form: newView("auth/registration/_form_credenail_passkey.html").addParams(reqParams.toViewParams()),
+		code: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -101,7 +103,7 @@ func (p *Provider) handlePostAuthRegistrationCredentialPasskey(w http.ResponseWr
 	}
 
 	// Registration Flow 更新
-	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
+	updateRegistrationFlowResp, kratosReqHeaderForNext, err := kratos.UpdateRegistrationFlow(ctx, kratos.UpdateRegistrationFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRegistrationFlowRequestBody{
@@ -111,50 +113,74 @@ func (p *Provider) handlePostAuthRegistrationCredentialPasskey(w http.ResponseWr
 			PasskeyRegister: reqParams.PasskeyRegister,
 		},
 	})
-	if err != nil && kratosResp.DuplicateIdentifier == "" {
+	if err != nil {
+		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+	if updateRegistrationFlowResp.DuplicateIdentifier != "" {
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	if kratosResp.RedirectBrowserTo != "" {
-		redirect(w, r, kratosResp.RedirectBrowserTo)
+	if updateRegistrationFlowResp.RedirectBrowserTo != "" {
+		redirect(w, r, updateRegistrationFlowResp.RedirectBrowserTo)
 		w.WriteHeader(http.StatusOK)
 	}
 
-	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促す
-	var (
-		information     string
-		traits          kratos.Traits
-		showSocialLogin bool
-	)
-	if kratosResp.DuplicateIdentifier == "" {
-		showSocialLogin = true
-	} else {
-		traits.Email = kratosResp.DuplicateIdentifier
-		showSocialLogin = false
-		information = "メールアドレスとパスワードで登録された既存のアカウントが存在します。パスワードを入力してログインすると、Googleのアカウントと連携されます。"
-	}
-
-	// create login flow
-	createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+	// get verification flow
+	getVerificationFlowResp, _, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
+		FlowID: updateRegistrationFlowResp.VerificationFlowID,
 		Header: kratosReqHeaderForNext,
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "update verification error", "err", err.Error())
+		slog.ErrorContext(ctx, "get verification error", "err", err.Error())
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	addCookies(w, kratosResp.Header.Cookie)
-	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-	newView("auth/login/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
-		"LoginFlowID":      createLoginFlowResp.LoginFlow.FlowID,
-		"Information":      information,
-		"CsrfToken":        createLoginFlowResp.LoginFlow.CsrfToken,
-		"Traits":           traits,
-		"ShowSocialLogin":  showSocialLogin,
-		"ShowPasskeyLogin": true,
-		"PasskeyChallenge": createLoginFlowResp.LoginFlow.PasskeyChallenge,
+
+	// render verification code page (replace <body> tag and push url)
+	addCookies(w, getVerificationFlowResp.Header.Cookie)
+	setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
+	views.code.addParams(map[string]any{
+		"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
+		"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
+		"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
 	}).render(w, r, session)
+
+	// // OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促す
+	// var (
+	// 	information     string
+	// 	traits          kratos.Traits
+	// 	showSocialLogin bool
+	// )
+	// if kratosResp.DuplicateIdentifier == "" {
+	// 	showSocialLogin = true
+	// } else {
+	// 	traits.Email = kratosResp.DuplicateIdentifier
+	// 	showSocialLogin = false
+	// 	information = "メールアドレスとパスワードで登録された既存のアカウントが存在します。パスワードを入力してログインすると、Googleのアカウントと連携されます。"
+	// }
+
+	// // create login flow
+	// createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+	// 	Header: kratosReqHeaderForNext,
+	// })
+	// if err != nil {
+	// 	slog.ErrorContext(ctx, "update verification error", "err", err.Error())
+	// 	views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	// 	return
+	// }
+	// addCookies(w, kratosResp.Header.Cookie)
+	// setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+	// newView("auth/login/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
+	// 	"LoginFlowID":      createLoginFlowResp.LoginFlow.FlowID,
+	// 	"Information":      information,
+	// 	"CsrfToken":        createLoginFlowResp.LoginFlow.CsrfToken,
+	// 	"Traits":           traits,
+	// 	"ShowSocialLogin":  showSocialLogin,
+	// 	"ShowPasskeyLogin": true,
+	// 	"PasskeyChallenge": createLoginFlowResp.LoginFlow.PasskeyChallenge,
+	// }).render(w, r, session)
 
 	// Registration flow成功時はVerification flowへリダイレクト
 	// redirect(w, r, fmt.Sprintf("%s?flow=%s", "/auth/verification/code", output.VerificationFlowID))

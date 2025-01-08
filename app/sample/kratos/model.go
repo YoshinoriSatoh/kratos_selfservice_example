@@ -80,6 +80,7 @@ func (i Identity) LogValue() slog.Value {
 type Session struct {
 	ID              string    `json:"id"`
 	Identity        Identity  `json:"identity,omitempty"`
+	Aal             Aal       `json:"authenticator_assurance_level"`
 	AuthenticatedAt time.Time `json:"authenticated_at"`
 }
 
@@ -122,6 +123,7 @@ type LoginFlow struct {
 	FlowID              string
 	PasskeyChallenge    string
 	CsrfToken           string
+	CodeAddress         string
 	DuplicateIdentifier string
 }
 
@@ -269,6 +271,6 @@ func (p *OidcProvider) Provided() bool {
 type Aal string
 
 const (
-	AalAal1             = Aal("aal1")
-	AalHighestAvailable = Aal("highest_available")
+	Aal1 = Aal("aal1")
+	Aal2 = Aal("aal2")
 )

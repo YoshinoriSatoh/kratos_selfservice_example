@@ -92,6 +92,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
+		Aal:    kratos.Aal1,
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:    "oidc",
 			CsrfToken: reqParams.CsrfToken,

@@ -3,7 +3,8 @@ package main
 import (
 	"log/slog"
 	"net/http"
-	"os"
+
+	"github.com/m-mizutani/clog"
 
 	"github.com/YoshinoriSatoh/kratos_example/handler"
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
@@ -17,10 +18,12 @@ var (
 
 func init() {
 	// Set up logger
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		AddSource: true,
-		Level:     slog.LevelDebug,
-	})))
+	slog.SetDefault(slog.New(clog.New(
+		clog.WithColor(true),
+		clog.WithSource(true),
+		clog.WithLevel(slog.LevelDebug),
+		clog.WithPrinter(clog.PrettyPrinter),
+	)))
 
 	err := LoadConfig()
 	if err != nil {
@@ -32,6 +35,8 @@ func init() {
 		PrivilegedAccessLimitMinutes: 10,
 		KratosPublicEndpoint:         "http://kratos:4433",
 		KratosAdminEndpoint:          "http://kratos:4434",
+		SettingsRequiredAal:          kratos.Aal(config.Kratos.SettingsRequiredAal),
+		SessionRequiredAal:           kratos.Aal(config.Kratos.SessionRequiredAal),
 	})
 
 	handler.Init(handler.InitInput{

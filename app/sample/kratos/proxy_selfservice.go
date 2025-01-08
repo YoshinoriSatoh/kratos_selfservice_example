@@ -265,7 +265,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 		slog.ErrorContext(ctx, "UpdateRegistrationFlow", "json unmarshal error", err)
 		return UpdateRegistrationFlowResponse{}, r.Header, err
 	}
-	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
+	kratosResp, kratosReqHeaderForNext, kratosErr := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      PATH_SELF_SERVICE_UPDATE_REGISTRATION_FLOW,
 		Query:     map[string]string{"flow": r.FlowID},
@@ -275,9 +275,9 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 
 	var redirectBrowserTo string
 	var duplicateIdentifier string
-	if err != nil {
+	if kratosErr != nil {
 		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
-			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
+			redirectBrowserTo = kratosErr.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else if kratosResp.StatusCode == http.StatusBadRequest {
 			// Parse response body (bad request)
 			var kratosRespBadRequestBody kratosUpdateRegisrationFlowBadRequestRespnseBody
@@ -288,7 +288,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 			duplicateIdentifier = getDuplicateIdentifierFromUi(kratosRespBadRequestBody.Ui)
 		} else {
 			slog.ErrorContext(ctx, "UpdateRegistrationFlow", "requestKratosPublic error", err)
-			return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, err
+			return UpdateRegistrationFlowResponse{}, kratosReqHeaderForNext, kratosErr
 		}
 	}
 
@@ -311,7 +311,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 		}
 	}
 
-	return response, kratosReqHeaderForNext, nil
+	return response, kratosReqHeaderForNext, kratosErr
 }
 
 // --------------------------------------------------------------------------
@@ -532,6 +532,7 @@ type CreateOrGetLoginFlowRequest struct {
 	FlowID  string
 	Header  KratosRequestHeader
 	Refresh bool
+	Aal     Aal
 }
 
 // CreateOrGetLoginFlow handles the logic for creating or getting a login flow
@@ -547,7 +548,7 @@ func CreateOrGetLoginFlow(ctx context.Context, r CreateOrGetLoginFlowRequest) (L
 		createLoginFlowResp, kratosReqHeader, err = CreateLoginFlow(ctx, CreateLoginFlowRequest{
 			Header:  r.Header,
 			Refresh: r.Refresh,
-			Aal:     Aal(pkgVars.sessionRequiredAal),
+			Aal:     r.Aal,
 		})
 		kratosRespHeader = createLoginFlowResp.Header
 		loginFlow = createLoginFlowResp.LoginFlow
@@ -650,11 +651,9 @@ func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLogin
 	if r.Refresh {
 		query["refresh"] = "true"
 	}
-	if r.Aal == AalAal1 {
-		query["aal"] = "aal1"
-	} else if r.Aal == AalHighestAvailable {
-		query["aal"] = "aal2"
-	}
+	query["aal"] = string(r.Aal)
+
+	slog.DebugContext(ctx, "CreateLoginFlow", "kratos query", query, "request", r)
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method: http.MethodGet,
 		Path:   path,
@@ -674,11 +673,18 @@ func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLogin
 	}
 
 	// create response
+	var codeAddress string
+	for _, node := range createLoginFlowResp.Ui.Nodes {
+		if node.Group == "code" && node.Attributes.Name == "address" {
+			codeAddress = node.Attributes.Value.(string)
+		}
+	}
 	response := CreateLoginFlowResponse{
 		Header: kratosResp.Header,
 		LoginFlow: LoginFlow{
-			FlowID:    createLoginFlowResp.ID,
-			CsrfToken: getCsrfTokenFromFlowUi(createLoginFlowResp.Ui),
+			FlowID:      createLoginFlowResp.ID,
+			CsrfToken:   getCsrfTokenFromFlowUi(createLoginFlowResp.Ui),
+			CodeAddress: codeAddress,
 		},
 	}
 	for _, node := range createLoginFlowResp.Ui.Nodes {
@@ -696,6 +702,7 @@ func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLogin
 type UpdateLoginFlowRequest struct {
 	FlowID string
 	Header KratosRequestHeader
+	Aal    Aal
 	Body   UpdateLoginFlowRequestBody
 }
 
@@ -704,6 +711,7 @@ type UpdateLoginFlowRequestBody struct {
 	Method       string `json:"method"`
 	Identifier   string `json:"identifier,omitempty"`
 	Password     string `json:"password,omitempty"`
+	Code         string `json:"code,omitempty"`
 	Provider     string `json:"provider,omitempty"`
 	PasskeyLogin string `json:"passkey_login,omitempty"`
 }
@@ -725,6 +733,10 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 		if r.Body.Password == "" || r.Body.Identifier == "" {
 			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. password: %s, identifier: %s", r.Body.Password, r.Body.Identifier)
 		}
+	} else if r.Body.Method == "code" {
+		// if r.Body.Identifier == "" {
+		// 	return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. identifier: %s", r.Body.Identifier)
+		// }
 	} else if r.Body.Method == "oidc" {
 		if r.Body.Provider == "" {
 			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. provider: %s", r.Body.Provider)
@@ -747,14 +759,17 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 	kratosResp, kratosReqHeaderForNext, err := requestKratosPublic(ctx, kratosRequest{
 		Method:    http.MethodPost,
 		Path:      PATH_SELF_SERVICE_UPDATE_LOGIN_FLOW,
-		Query:     map[string]string{"flow": r.FlowID},
+		Query:     map[string]string{"flow": r.FlowID, "aal": string(r.Aal)},
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
-	var redirectBrowserTo string
+	slog.DebugContext(ctx, "UpdateLoginFlow", "kratosResp", string(kratosResp.BodyBytes), "err", err)
 	if err != nil {
 		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
-			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
+			return UpdateLoginFlowResponse{
+				Header:            kratosResp.Header,
+				RedirectBrowserTo: err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo,
+			}, kratosReqHeaderForNext, nil
 		} else {
 			slog.ErrorContext(ctx, "UpdateLoginFlow", "requestKratosPublic error", err)
 			return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
@@ -767,12 +782,12 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
 		return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
+	slog.DebugContext(ctx, "UpdateLoginFlow", "raw", string(kratosResp.BodyBytes))
 
 	// Create response
 	response := UpdateLoginFlowResponse{
-		Header:            kratosResp.Header,
-		Session:           kratosRespBody.Session,
-		RedirectBrowserTo: redirectBrowserTo,
+		Header:  kratosResp.Header,
+		Session: kratosRespBody.Session,
 	}
 
 	return response, kratosReqHeaderForNext, nil

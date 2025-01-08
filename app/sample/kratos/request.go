@@ -9,11 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 )
 
 type KratosRequestHeader struct {
-	Cookie   string
+	Cookie   []string
 	ClientIP string
 }
 
@@ -38,7 +37,8 @@ type kratosResponse struct {
 func requestKratosPublic(ctx context.Context, i kratosRequest) (kratosResponse, KratosRequestHeader, error) {
 	resp, err := requestKratos(ctx, pkgVars.kratosPublicEndpoint, i)
 	reqHeader := i.Header
-	reqHeader.Cookie = strings.Join(resp.Header.Cookie, " ")
+	reqHeader.Cookie = resp.Header.Cookie
+	// reqHeader.Cookie = strings.Join(resp.Header.Cookie, " ")
 	return resp, reqHeader, err
 }
 
@@ -47,9 +47,9 @@ func requestKratosAdmin(ctx context.Context, i kratosRequest) (kratosResponse, e
 }
 
 func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (kratosResponse, error) {
-	if i.Path != "/sessions/whoami" {
-		slog.InfoContext(ctx, "requestKratos", "endpoint", endpoint, "input", i, "input.body", string(i.BodyBytes))
-	}
+	// if i.Path != "/sessions/whoami" {
+	// 	slog.InfoContext(ctx, "requestKratos", "endpoint", endpoint, "input", i, "input.body", string(i.BodyBytes))
+	// }
 	// slog.DebugContext(ctx, "requestKratos", "Cookie", r.Header.Get("Cookie"))
 
 	req, err := http.NewRequest(
@@ -60,21 +60,16 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 		slog.ErrorContext(ctx, "requestKratos", "NewRequestError", err)
 		return kratosResponse{}, err
 	}
-	req.Header.Set("Cookie", i.Header.Cookie)
-	// for _, v := range strings.Split(i.Header.Cookie, ";") {
-	// 	fmt.Println("cookie")
-	// 	fmt.Println(strings.TrimSpace(v))
-	// 	if strings.TrimSpace(v) != "" {
-	// 		req.Header.Add("Cookie", strings.TrimSpace(v))
-	// 	}
-	// }
+	// req.Header.Set("Cookie", i.Header.Cookie)
+	for _, v := range i.Header.Cookie {
+		req.Header.Add("Cookie", v)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("True-Client-IP", i.Header.ClientIP)
 	// req.Header.Set("X-Forwarded-For", r.RemoteAddr)
 
 	if len(i.Query) > 0 {
-		slog.InfoContext(ctx, "kratos request query", "query", i.Query)
 		query := req.URL.Query()
 		for k, v := range i.Query {
 			query.Add(k, v)
@@ -82,8 +77,10 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 		req.URL.RawQuery = query.Encode()
 	}
 
-	slog.DebugContext(ctx, "req", "req", req)
-	slog.DebugContext(ctx, "req", "Cookie", req.Header.Get("Cookie"))
+	if i.Path != "/sessions/whoami" {
+		slog.InfoContext(ctx, "requestKratos", "request", req)
+	}
+
 	client := new(http.Client)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -149,6 +146,7 @@ func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error
 			return errors.New("unknown error response format")
 		}
 	} else if statusCode == http.StatusUnprocessableEntity {
+		slog.DebugContext(ctx, "getKratosError", "statusCode", statusCode)
 		var errorBrowserLocationChangeRequired ErrorBrowserLocationChangeRequired
 		if err := json.Unmarshal(bodyBytes, &errorBrowserLocationChangeRequired); err != nil {
 			slog.ErrorContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
@@ -166,6 +164,12 @@ func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error
 			slog.ErrorContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
 			return err
 		}
+
+		// aal2 required for session
+		if statusCode == http.StatusForbidden && errGeneric.Err.ID == "session_aal2_required" {
+
+		}
+
 		return errGeneric
 	}
 }

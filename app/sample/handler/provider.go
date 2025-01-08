@@ -63,6 +63,8 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	// Authentication Login
 	mux.Handle("GET /auth/login", p.baseMiddleware(p.handleGetAuthLogin))
 	mux.Handle("POST /auth/login/password", p.baseMiddleware(p.handlePostAuthLoginPassword))
+	mux.Handle("GET /auth/login/code", p.baseMiddleware(p.handleGetAuthLoginCode))
+	mux.Handle("POST /auth/login/code", p.baseMiddleware(p.handlePostAuthLoginCode))
 	mux.Handle("POST /auth/login/oidc", p.baseMiddleware(p.handlePostAuthLoginOidc))
 	mux.Handle("POST /auth/login/passkey", p.baseMiddleware(p.handlePostAuthLoginPasskey))
 
@@ -83,7 +85,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
 
 	// Top
-	mux.Handle("GET /", p.baseMiddleware(p.handleGetTop))
+	mux.Handle("GET /{$}", p.baseMiddleware(p.handleGetTop))
 
 	// Item
 	mux.Handle("GET /item/{id}", p.baseMiddleware(p.handleGetItem))
@@ -116,6 +118,7 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 		whoamiResp, err := kratos.Whoami(ctx, kratos.WhoamiRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 		})
+
 		if err != nil || whoamiResp.Session == nil {
 			ctx = context.WithValue(ctx, ctxSession{}, nil)
 		} else {
@@ -131,8 +134,12 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 }
 
 func makeDefaultKratosRequestHeader(r *http.Request) kratos.KratosRequestHeader {
+	var cookies []string
+	for _, v := range r.Cookies() {
+		cookies = append(cookies, v.String())
+	}
 	return kratos.KratosRequestHeader{
-		Cookie:   r.Header.Get("Cookie"),
+		Cookie:   cookies,
 		ClientIP: r.RemoteAddr,
 	}
 }

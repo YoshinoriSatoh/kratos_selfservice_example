@@ -16,6 +16,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
+	github.com/m-mizutani/clog v0.0.7
 	github.com/nicksnyder/go-i18n/v2 v2.4.1
 	golang.org/x/text v0.21.0
 )
@@ -35,9 +36,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.2 // indirect
 	github.com/aws/smithy-go v1.22.1 // indirect
+	github.com/fatih/color v1.16.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
+	github.com/k0kubun/pp/v3 v3.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/m-mizutani/goerr v0.1.11 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect

@@ -24,7 +24,7 @@ type postAuthLoginPasswordRequestParams struct {
 }
 
 // Extract parameters from http request
-func newPostAuthLoginRequestParams(r *http.Request) *postAuthLoginPasswordRequestParams {
+func newPostAuthLoginPasswordRequestParams(r *http.Request) *postAuthLoginPasswordRequestParams {
 	return &postAuthLoginPasswordRequestParams{
 		FlowID:     r.URL.Query().Get("flow"),
 		Render:     r.PostFormValue("render"),
@@ -61,6 +61,7 @@ func (params *postAuthLoginPasswordRequestParams) validate() *viewError {
 // Views
 type getAuthLoginPasswordPostViews struct {
 	index *view
+	code  *view
 	top   *view
 }
 
@@ -73,9 +74,10 @@ func prepareGetAuthLoginPasswordPost(w http.ResponseWriter, r *http.Request) (*p
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
-	reqParams := newPostAuthLoginRequestParams(r)
+	reqParams := newPostAuthLoginPasswordRequestParams(r)
 	views := getAuthLoginPasswordPostViews{
 		index: newView("auth/login/_form.html").addParams(reqParams.toViewParams()),
+		code:  newView("auth/login/code.html").addParams(reqParams.toViewParams()),
 		top:   newView("top/index.html").addParams(reqParams.toViewParams()),
 	}
 
@@ -103,6 +105,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
+		Aal:    kratos.Aal1,
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:     "password",
 			CsrfToken:  reqParams.CsrfToken,
@@ -116,8 +119,48 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// view authentication code input page for aal2 (MFA)
+	if kratos.SessionRequiredAal == kratos.Aal2 {
+		// create and update login flow for aal2, send authentication code
+		createLoginFlowAal2Resp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+			Header:  kratosReqHeaderForNext,
+			Aal:     kratos.Aal2,
+			Refresh: true,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
+			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+			FlowID: createLoginFlowAal2Resp.LoginFlow.FlowID,
+			Header: kratosReqHeaderForNext,
+			Aal:    kratos.Aal2,
+			Body: kratos.UpdateLoginFlowRequestBody{
+				Method:     "code",
+				CsrfToken:  createLoginFlowAal2Resp.LoginFlow.CsrfToken,
+				Identifier: reqParams.Identifier,
+			},
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
+			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+
+		addCookies(w, updateLoginFlowResp.Header.Cookie)
+		setHeadersForReplaceBody(w, "/auth/login/code")
+		views.code.addParams(map[string]any{
+			"LoginFlowID": createLoginFlowAal2Resp.LoginFlow.FlowID,
+			"Identifier":  reqParams.Identifier,
+			"CsrfToken":   createLoginFlowAal2Resp.LoginFlow.CsrfToken,
+		}).render(w, r, session)
+		return
+	}
+
 	// update session
 	session = &updateLoginFlowResp.Session
+	slog.DebugContext(ctx, "handlePostAuthLoginPassword", "session", session)
 
 	if reqParams.Hook != "" {
 		h := hookFromQueryParam(reqParams.Hook)

@@ -34,14 +34,12 @@ func newView(path string) *view {
 
 func (v *view) render(w http.ResponseWriter, r *http.Request, session *kratos.Session) error {
 	v.Params["CurrentPath"] = r.URL.Path
-
-	if session != nil {
+	if isAuthenticated(session) {
 		v.Params["IsAuthenticated"] = true
 		v.Params["Navbar"] = session.Identity.Traits.ToMap()
 	} else {
 		v.Params["IsAuthenticated"] = false
 	}
-
 	err := pkgVars.tmpl.ExecuteTemplate(w, v.Path, v.Params)
 	if err != nil {
 		slog.Error(err.Error())
@@ -84,7 +82,7 @@ func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
 	w.Header().Set("HX-Reswap", "innerHTML")
 }
 
-func mergeProxyResponseCookies(reqCookie string, proxyRespCookies []string) string {
+func mergeProxyResponseCookies(reqCookie []string, proxyRespCookies []string) []string {
 	var cookies []string
 	var hasCsrfToken bool
 	var hasSession bool
@@ -99,7 +97,8 @@ func mergeProxyResponseCookies(reqCookie string, proxyRespCookies []string) stri
 			hasSession = true
 		}
 	}
-	for _, reqcv := range strings.Split(reqCookie, "; ") {
+	for _, reqcv := range reqCookie {
+		// for _, reqcv := range strings.Split(reqCookie, "; ") {
 		slog.Debug("mergeProxyResponseCookies", "reqcv", reqcv)
 		if !hasCsrfToken && strings.HasPrefix(reqcv, "csrf_token") {
 			cookies = append(cookies, reqcv)
@@ -109,7 +108,8 @@ func mergeProxyResponseCookies(reqCookie string, proxyRespCookies []string) stri
 		}
 	}
 
-	return strings.Join(cookies, "; ")
+	return cookies
+	// return strings.Join(cookies, "; ")
 }
 
 // ---------------------- viewError ----------------------

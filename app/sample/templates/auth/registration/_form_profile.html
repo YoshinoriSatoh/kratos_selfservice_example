@@ -5,7 +5,7 @@
   {{ if eq .Method "profile" }}
   hx-post="/auth/registration/profile?flow={{.RegistrationFlowID}}" 
   {{ else if eq .Method "oidc" }}
-  hx-post="/auth/registration/credenail/oidc?flow={{.RegistrationFlowID}}" 
+  hx-post="/auth/registration/credential/oidc?flow={{.RegistrationFlowID}}" 
   hx-vals='{"provider": "{{.Provider}}"}'
   {{ end }}
   hx-swap="outerHTML" 

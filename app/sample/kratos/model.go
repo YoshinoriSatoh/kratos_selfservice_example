@@ -133,8 +133,10 @@ type RecoveryFlow struct {
 }
 
 type SettingsFlow struct {
-	FlowID    string
-	CsrfToken string
+	FlowID     string
+	CsrfToken  string
+	TotpQR     string
+	TotpUnlink bool
 }
 
 // kratosからのレスポンスのうち、必要なもののみを定義
@@ -162,6 +164,10 @@ type uiNodeAttributes struct {
 	Pattern  string      `json:"pattern,omitempty"`
 	Required bool        `json:"required,omitempty"`
 	Type     string      `json:"type"`
+	ID       string      `json:"id,omitempty"`
+	Src      string      `json:"src,omitempty"`
+	Width    int         `json:"width,omitempty"`
+	Height   int         `json:"height,omitempty"`
 	Value    interface{} `json:"value,omitempty"`
 }
 

@@ -10,26 +10,26 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// GET /auth/login/code
+// GET /auth/login/totp
 // --------------------------------------------------------------------------
-// Request parameters for handleGetAuthLoginCode
-type getAuthLoginCodeRequestParams struct {
+// Request parameters for handleGetAuthLoginTotp
+type getAuthLoginTotpRequestParams struct {
 }
 
 // Extract parameters from http request
-func newGetAuthLoginCodeRequestParams(r *http.Request) *getAuthLoginCodeRequestParams {
-	return &getAuthLoginCodeRequestParams{}
+func newGetAuthLoginTotpRequestParams(r *http.Request) *getAuthLoginTotpRequestParams {
+	return &getAuthLoginTotpRequestParams{}
 }
 
 // Return parameters that can refer in view template
-func (p *getAuthLoginCodeRequestParams) toViewParams() map[string]any {
+func (p *getAuthLoginTotpRequestParams) toViewParams() map[string]any {
 	return map[string]any{}
 }
 
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthLoginCodeRequestParams) validate() *viewError {
+func (p *getAuthLoginTotpRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(p))
 
 	for k := range viewError.validationFieldErrors {
@@ -46,12 +46,12 @@ func (p *getAuthLoginCodeRequestParams) validate() *viewError {
 }
 
 // Views
-type getAuthLoginCodeViews struct {
-	code *view
+type getAuthLoginTotpViews struct {
+	totp *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetAuthLoginCode(w http.ResponseWriter, r *http.Request) (*getAuthLoginCodeRequestParams, getAuthLoginCodeViews, *viewError, error) {
+func prepareGetAuthLoginTotp(w http.ResponseWriter, r *http.Request) (*getAuthLoginTotpRequestParams, getAuthLoginTotpViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
@@ -59,31 +59,32 @@ func prepareGetAuthLoginCode(w http.ResponseWriter, r *http.Request) (*getAuthLo
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
 		MessageID: "ERR_LOGIN_DEFAULT",
 	}))
-	reqParams := newGetAuthLoginCodeRequestParams(r)
-	views := getAuthLoginCodeViews{
-		code: newView("auth/login/code.html").addParams(reqParams.toViewParams()),
+	reqParams := newGetAuthLoginTotpRequestParams(r)
+	views := getAuthLoginTotpViews{
+		totp: newView("auth/login/totp.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.code.addParams(viewError.toViewParams()).render(w, r, session)
+		views.totp.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
 	return reqParams, views, baseViewError, nil
 }
 
-func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	_, views, baseViewError, err := prepareGetAuthLoginCode(w, r)
+	_, views, baseViewError, err := prepareGetAuthLoginTotp(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginCode failed", "err", err)
+		slog.ErrorContext(ctx, "prepareGetAuthLoginTotp failed", "err", err)
 		return
 	}
-	// create and update login flow for aal2, send authentication code
+
+	// create and update login flow for aal2, send authentication totp
 	createLoginFlowAal2Resp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header:  makeDefaultKratosRequestHeader(r),
 		Aal:     kratos.Aal2,
@@ -91,7 +92,7 @@ func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-		views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
@@ -99,20 +100,20 @@ func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal2,
 		Body: kratos.UpdateLoginFlowRequestBody{
-			Method:     "code",
+			Method:     "totp",
 			CsrfToken:  createLoginFlowAal2Resp.LoginFlow.CsrfToken,
 			Identifier: createLoginFlowAal2Resp.LoginFlow.CodeAddress,
 		},
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-		views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
-	setHeadersForReplaceBody(w, "/auth/login/code")
-	views.code.addParams(map[string]any{
+	setHeadersForReplaceBody(w, "/auth/login/totp")
+	views.totp.addParams(map[string]any{
 		"LoginFlowID": createLoginFlowAal2Resp.LoginFlow.FlowID,
 		"CsrfToken":   createLoginFlowAal2Resp.LoginFlow.CsrfToken,
 		"Identifier":  createLoginFlowAal2Resp.LoginFlow.CodeAddress,

@@ -311,7 +311,7 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 		}
 	}
 
-	return response, kratosReqHeaderForNext, kratosErr
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -712,6 +712,7 @@ type UpdateLoginFlowRequestBody struct {
 	Identifier   string `json:"identifier,omitempty"`
 	Password     string `json:"password,omitempty"`
 	Code         string `json:"code,omitempty"`
+	TotpCode     string `json:"totp_code,omitempty"`
 	Provider     string `json:"provider,omitempty"`
 	PasskeyLogin string `json:"passkey_login,omitempty"`
 }
@@ -734,9 +735,9 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. password: %s, identifier: %s", r.Body.Password, r.Body.Identifier)
 		}
 	} else if r.Body.Method == "code" {
-		// if r.Body.Identifier == "" {
-		// 	return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. identifier: %s", r.Body.Identifier)
-		// }
+		// In case of AAL2, missing Code fields at first calling this method. The TotpCode is specified at second calling.
+	} else if r.Body.Method == "totp" {
+		// In case of AAL2, missing TotpCode fields at first calling this method. The TotpCode is specified at second calling.
 	} else if r.Body.Method == "oidc" {
 		if r.Body.Provider == "" {
 			return UpdateLoginFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. provider: %s", r.Body.Provider)
@@ -1142,8 +1143,10 @@ func GetSettingsFlow(ctx context.Context, r GetSettingsFlowRequest) (GetSettings
 	response := GetSettingsFlowResponse{
 		Header: kratosResp.Header,
 		SettingsFlow: SettingsFlow{
-			FlowID:    kratosRespBody.ID,
-			CsrfToken: getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			FlowID:     kratosRespBody.ID,
+			CsrfToken:  getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			TotpQR:     getTotpQRFromFlowUi(kratosRespBody.Ui),
+			TotpUnlink: getTotpUnlinkFromFlowUi(kratosRespBody.Ui),
 		},
 	}
 
@@ -1190,10 +1193,13 @@ func CreateSettingsFlow(ctx context.Context, r CreateSettingsFlowRequest) (Creat
 	response := CreateSettingsFlowResponse{
 		Header: kratosResp.Header,
 		SettingsFlow: SettingsFlow{
-			FlowID:    kratosRespBody.ID,
-			CsrfToken: getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			FlowID:     kratosRespBody.ID,
+			CsrfToken:  getCsrfTokenFromFlowUi(kratosRespBody.Ui),
+			TotpQR:     getTotpQRFromFlowUi(kratosRespBody.Ui),
+			TotpUnlink: getTotpUnlinkFromFlowUi(kratosRespBody.Ui),
 		},
 	}
+	slog.DebugContext(ctx, "CreateSettingsFlow", "response", response)
 
 	return response, r.Header, nil
 }
@@ -1215,10 +1221,12 @@ type UpdateSettingsFlowResponse struct {
 }
 
 type UpdateSettingsFlowRequestBody struct {
-	Method    string `json:"method"`
-	CsrfToken string `json:"csrf_token"`
-	Password  string `json:"password,omitempty"`
-	Traits    Traits `json:"traits,omitempty"`
+	Method     string `json:"method"`
+	CsrfToken  string `json:"csrf_token"`
+	Password   string `json:"password,omitempty"`
+	Traits     Traits `json:"traits,omitempty"`
+	TotpCode   string `json:"totp_code,omitempty"`
+	TotpUnlink string `json:"totp_unlink,omitempty"`
 }
 
 type kratosUpdateSettingsFlowRespnseBody struct {
@@ -1234,6 +1242,10 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 	} else if r.Body.Method == "profile" {
 		if r.Body.Traits == (Traits{}) {
 			return UpdateSettingsFlowResponse{}, r.Header, errors.New("missing traits in body")
+		}
+	} else if r.Body.Method == "totp" {
+		if r.Body.TotpCode == "" && r.Body.TotpUnlink == "false" {
+			return UpdateSettingsFlowResponse{}, r.Header, errors.New("missing password in body")
 		}
 	} else {
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "Method", r.Body.Method)

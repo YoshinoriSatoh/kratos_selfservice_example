@@ -11,7 +11,7 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// POST /auth/registration/credenail/password
+// POST /auth/registration/credential/password
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthRegistrationCredentialPassword
 type postAuthRegistrationPasswordRequestParams struct {

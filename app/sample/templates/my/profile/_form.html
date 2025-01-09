@@ -1,4 +1,7 @@
 {{define "my/profile/_form.html"}}
+
+<h3 class="text-lg text-center font-bold">プロフィール</h3>
+
 <form 
   id="profile-form"
   hx-post="/my/profile?flow={{.SettingsFlowID}}" 
@@ -65,13 +68,61 @@
     <button 
       type="submit" 
       class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
-    >保存</button>
+    >更新</button>
   </div>
+</form>
 
-  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
-    <div class="mt-6">
-      {{ template "compnents/_messages.html" .Messages }}
+<h3 class="mt-12 text-lg text-center font-bold">認証アプリ</h3>
+<form 
+  id="totp-form"
+  hx-post="/my/totp?flow={{.SettingsFlowID}}" 
+  hx-swap="outerHTML" 
+  hx-target="this"
+>
+  <input
+    name="csrf_token"
+    type="hidden"
+    value="{{.CsrfToken}}"
+  />
+
+  {{ if eq .TotpRegisted false }}
+    <p>認証アプリでQRコードを読み取り、表示される認証コードを入力してください。</p>
+    <img {{ .TotpQR|safeattr}}>
+
+    <div class="mb-6">
+      {{ template "components/_input.html" dict 
+        "type" "text" 
+        "name" "totp_code" 
+        "label" "認証コード" 
+        "validationErrorMessage" .ValidationFieldError.Code.Message 
+      }}
+    </div>
+    <div class="mx-auto text-center">
+      <button 
+        type="submit" 
+        class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+      >更新</button>
+    </div>
+  {{ else }}
+    <div class="mx-auto text-center">
+      <input
+        name="totp_unlink"
+        type="hidden"
+        value="true"
+      />
+      <button 
+        type="submit" 
+        class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+      >認証アプリを解除</button>
     </div>
   {{ end }}
+
 </form>
+
+{{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+  <div class="mt-6">
+    {{ template "compnents/_messages.html" .Messages }}
+  </div>
+{{ end }}
+
 {{end}}

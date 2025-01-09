@@ -184,6 +184,31 @@ func getCsrfTokenFromFlowUi(ui uiContainer) string {
 	return ""
 }
 
+func getTotpQRFromFlowUi(ui uiContainer) string {
+	slog.Debug("getTotpQRFromFlowUi", "ui", ui)
+	for _, node := range ui.Nodes {
+		slog.Debug("getTotpQRFromFlowUi", "node", node)
+		if node.Attributes.ID == "totp_qr" {
+			slog.Debug("getTotpQRFromFlowUi", "src", node.Attributes.Src)
+			return node.Attributes.Src
+		}
+	}
+	slog.Error("Missing totp_qr")
+	return ""
+}
+
+func getTotpUnlinkFromFlowUi(ui uiContainer) bool {
+	slog.Debug("getTotpUnlinkFromFlowUi", "ui", ui)
+	for _, node := range ui.Nodes {
+		slog.Debug("getTotpUnlinkFromFlowUi", "node", node)
+		if node.Attributes.Name == "totp_unlink" {
+			return true
+		}
+	}
+	slog.Error("Missing totp_unlink")
+	return false
+}
+
 func getErrorMessagesFromUi(ui uiContainer) error {
 	var messages ErrorUiMessages
 	for _, v := range ui.Messages {

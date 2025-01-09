@@ -1,0 +1,55 @@
+{{define "auth/login/mfa.html"}}
+{{template "layout/_header.html" .}}
+
+<div class="container mx-auto px-24">
+  <h2 class="text-lg text-center font-bold">ログイン 2段階認証</h2>
+
+  {{ if and (ne .Information "") (ne .Information nil) }}
+  <div class="flex items-center p-4 my-4 text-sm text-blue-800 border border-blue-300 rounded-lg bg-blue-50 dark:bg-gray-800 dark:text-blue-400 dark:border-blue-800" role="alert">
+    <svg class="flex-shrink-0 inline w-4 h-4 me-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+    </svg>
+    <span class="sr-only">Info</span>
+    <div>{{ .Information }} </div>
+  </div>
+  {{end}}
+
+  <div class="flex items-center mt-2.5 mb-5">
+    <div class="mx-auto text-center">
+      <form 
+        id="login-code-form"
+        hx-get="/auth/login/code" 
+        hx-swap="outerHTML" 
+        hx-target="this"
+        >
+        <button 
+          type="submit"
+          class="sm:w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+        >認証コードをメールで送信</button>
+      </form>
+    </div>
+    <div class="mx-auto text-center">
+      <form 
+        id="login-totp-form"
+        hx-get="/auth/login/totp" 
+        hx-swap="outerHTML" 
+        hx-target="this"
+        >
+        <button 
+          hx-push-url="/auth/login/totp"
+          class="sm:w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+        >認証アプリを使用</button>
+      </form>
+    </div>
+  </div>
+
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
+</div>
+
+{{template "layout/_footer.html" .}}
+
+{{end}}

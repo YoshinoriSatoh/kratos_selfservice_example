@@ -11,7 +11,7 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// POST /auth/registration/credenail/oidc
+// POST /auth/registration/credential/oidc
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthRegistrationCredentialOidc
 type postAuthRegistrationCredentialOidcRequestParams struct {
@@ -112,6 +112,7 @@ func (p *Provider) handlePostAuthRegistrationCredentialOidc(w http.ResponseWrite
 		},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "handlePostAuthRegistrationCredentialOidc", "UpdateRegistrationFlow error", err)
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}

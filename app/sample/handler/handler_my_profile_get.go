@@ -108,6 +108,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
+	slog.DebugContext(ctx, "handleGetMyProfile", "settingsFlow", settingsFlow)
 
 	// add cookies to the request header
 	addCookies(w, kratosResponseHeader.Cookie)
@@ -141,5 +142,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 		"BirthdateYear":  year,
 		"BirthdateMonth": month,
 		"BirthdateDay":   day,
+		"TotpQR":         "src=" + settingsFlow.TotpQR,
+		"TotpRegisted":   settingsFlow.TotpUnlink,
 	}).render(w, r, session)
 }

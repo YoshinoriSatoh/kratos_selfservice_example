@@ -57,6 +57,7 @@ type getAuthLoginPasskeyViews struct {
 	index *view
 	code  *view
 	form  *view
+	mfa   *view
 }
 
 // collect rendering data and validate request parameters.
@@ -73,6 +74,7 @@ func preparePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) (*postA
 		index: newView("top/index.html").addParams(reqParams.toViewParams()),
 		code:  newView("auth/login/code.html").addParams(reqParams.toViewParams()),
 		form:  newView("auth/login/_form_passkey.html").addParams(reqParams.toViewParams()),
+		mfa:   newView("auth/login/mfa.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
@@ -96,7 +98,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 	}
 
 	// update login flow
-	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal1,
@@ -114,42 +116,9 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 
 	// view authentication code input page for aal2 (MFA)
 	if kratos.SessionRequiredAal == kratos.Aal2 {
-		// create and update login flow for aal2, send authentication code
-		createLoginFlowAal2Resp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-			Header:  kratosReqHeaderForNext,
-			Aal:     kratos.Aal2,
-			Refresh: true,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
-		}
-		slog.DebugContext(ctx, "handlePostAuthLoginPasskey", "createLoginFlowAal2Resp", createLoginFlowAal2Resp)
-
-		_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
-			FlowID: createLoginFlowAal2Resp.LoginFlow.FlowID,
-			Header: kratosReqHeaderForNext,
-			Aal:    kratos.Aal2,
-			Body: kratos.UpdateLoginFlowRequestBody{
-				Method:     "code",
-				CsrfToken:  createLoginFlowAal2Resp.LoginFlow.CsrfToken,
-				Identifier: createLoginFlowAal2Resp.LoginFlow.CodeAddress,
-			},
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
-		}
-
 		addCookies(w, updateLoginFlowResp.Header.Cookie)
-		setHeadersForReplaceBody(w, "/auth/login/code")
-		views.code.addParams(map[string]any{
-			"LoginFlowID": createLoginFlowAal2Resp.LoginFlow.FlowID,
-			"CsrfToken":   createLoginFlowAal2Resp.LoginFlow.CsrfToken,
-			"Identifier":  createLoginFlowAal2Resp.LoginFlow.CodeAddress,
-		}).render(w, r, session)
+		setHeadersForReplaceBody(w, "/auth/login/mfa")
+		views.mfa.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 

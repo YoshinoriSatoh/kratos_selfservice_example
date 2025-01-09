@@ -50,9 +50,9 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	// Authentication Registration
 	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
 	mux.Handle("POST /auth/registration/profile", p.baseMiddleware(p.handlePostAuthRegistrationProfile))
-	mux.Handle("POST /auth/registration/credenail/password", p.baseMiddleware(p.handlePostAuthRegistrationCredentialPassword))
-	mux.Handle("POST /auth/registration/credenail/oidc", p.baseMiddleware(p.handlePostAuthRegistrationCredentialOidc))
-	mux.Handle("POST /auth/registration/credenail/passkey", p.baseMiddleware(p.handlePostAuthRegistrationCredentialPasskey))
+	mux.Handle("POST /auth/registration/credential/password", p.baseMiddleware(p.handlePostAuthRegistrationCredentialPassword))
+	mux.Handle("POST /auth/registration/credential/oidc", p.baseMiddleware(p.handlePostAuthRegistrationCredentialOidc))
+	mux.Handle("POST /auth/registration/credential/passkey", p.baseMiddleware(p.handlePostAuthRegistrationCredentialPasskey))
 
 	// Authentication Verification
 	mux.Handle("GET /auth/verification", p.baseMiddleware(p.handleGetAuthVerification))
@@ -65,6 +65,8 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("POST /auth/login/password", p.baseMiddleware(p.handlePostAuthLoginPassword))
 	mux.Handle("GET /auth/login/code", p.baseMiddleware(p.handleGetAuthLoginCode))
 	mux.Handle("POST /auth/login/code", p.baseMiddleware(p.handlePostAuthLoginCode))
+	mux.Handle("GET /auth/login/totp", p.baseMiddleware(p.handleGetAuthLoginTotp))
+	mux.Handle("POST /auth/login/totp", p.baseMiddleware(p.handlePostAuthLoginTotp))
 	mux.Handle("POST /auth/login/oidc", p.baseMiddleware(p.handlePostAuthLoginOidc))
 	mux.Handle("POST /auth/login/passkey", p.baseMiddleware(p.handlePostAuthLoginPasskey))
 
@@ -83,6 +85,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	// My Profile
 	mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
 	mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
+	mux.Handle("POST /my/totp", p.baseMiddleware(p.handlePostMyTotp))
 
 	// Top
 	mux.Handle("GET /{$}", p.baseMiddleware(p.handleGetTop))
@@ -99,7 +102,7 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 }
 
 func (p *Provider) baseMiddleware(handler http.HandlerFunc) http.Handler {
-	return p.setContext(handler)
+	return p.fetchSession(handler)
 }
 
 type ctxRequestID struct{}
@@ -107,7 +110,7 @@ type ctxRemoteAddr struct{}
 type ctxCookie struct{}
 type ctxSession struct{}
 
-func (p *Provider) setContext(next http.Handler) http.Handler {
+func (p *Provider) fetchSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		requestID, _ := uuid.NewRandom()
@@ -119,6 +122,13 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 
+		if kratos.SessionRequiredAal == kratos.Aal2 && err != nil && err.(kratos.ErrorGeneric).Err.ID == "session_aal2_required" &&
+			r.URL.Path != "/auth/login/code" && r.URL.Path != "/auth/login/totp" && r.Method != "POST" {
+			setHeadersForReplaceBody(w, "/auth/login/mfa")
+			newView("auth/login/mfa.html").render(w, r, nil)
+			return
+		}
+
 		if err != nil || whoamiResp.Session == nil {
 			ctx = context.WithValue(ctx, ctxSession{}, nil)
 		} else {
@@ -126,7 +136,7 @@ func (p *Provider) setContext(next http.Handler) http.Handler {
 		}
 
 		if r.URL.Path != "/favicon.ico" {
-			slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path)
+			slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path, "session", whoamiResp.Session)
 		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))

@@ -764,7 +764,6 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
-	slog.DebugContext(ctx, "UpdateLoginFlow", "kratosResp", string(kratosResp.BodyBytes), "err", err)
 	if err != nil {
 		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
 			return UpdateLoginFlowResponse{
@@ -783,7 +782,6 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 		slog.ErrorContext(ctx, "UpdateLoginFlow", "json unmarshal error", err)
 		return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
-	slog.DebugContext(ctx, "UpdateLoginFlow", "raw", string(kratosResp.BodyBytes))
 
 	// Create response
 	response := UpdateLoginFlowResponse{
@@ -1201,7 +1199,7 @@ func CreateSettingsFlow(ctx context.Context, r CreateSettingsFlowRequest) (Creat
 	}
 	slog.DebugContext(ctx, "CreateSettingsFlow", "response", response)
 
-	return response, r.Header, nil
+	return response, kratosReqHeaderForNext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -1271,6 +1269,7 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 	if err != nil {
 		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
 			response.RedirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
+			slog.InfoContext(ctx, "UpdateSettingsFlow", "RedirectBrowserTo", response.RedirectBrowserTo)
 		} else {
 			slog.ErrorContext(ctx, "UpdateSettingsFlow", "requestKratosPublic error", err)
 			return response, kratosReqHeaderForNext, err
@@ -1283,6 +1282,8 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "json unmarshal error", err)
 		return response, kratosReqHeaderForNext, err
 	}
+
+	slog.DebugContext(ctx, "UpdateSettingsFlow", "kratosReqBody", string(kratosInputBytes), "kratosRespBody", string(kratosResp.BodyBytes), "err", err)
 
 	// Create response
 	for _, c := range kratosRespBody.ContinueWith {

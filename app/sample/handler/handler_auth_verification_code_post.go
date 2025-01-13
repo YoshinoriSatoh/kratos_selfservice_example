@@ -128,6 +128,7 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 	createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header:  kratosReqHeaderForNext,
 		Refresh: true,
+		Aal:     kratos.Aal1,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update verification error", "err", err.Error())

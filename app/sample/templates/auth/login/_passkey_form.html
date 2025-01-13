@@ -1,4 +1,4 @@
-{{define "auth/login/_form_passkey.html"}}
+{{define "auth/login/_passkey_form.html"}}
 <div id="_form_passkey">
   <script>
     function __oryWebAuthnBufferDecode(value) {
@@ -176,6 +176,12 @@
     <input
       name="passkey_login"
       type="hidden"
+    />
+
+    <input
+      name="update_settings_after_logged_in"
+      type="hidden"
+      value="{{.UpdateSettingsAfterLoggedIn}}"
     />
 
     <div class="mx-auto mt-4 text-center">

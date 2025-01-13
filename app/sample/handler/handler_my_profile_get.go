@@ -65,7 +65,7 @@ func (p *getMyProfileRequestParams) validate() *viewError {
 
 // Views
 type getMyProfileViews struct {
-	index *view
+	profile *view
 }
 
 // collect rendering data and validate request parameters.
@@ -79,12 +79,12 @@ func prepareGetMyProfile(w http.ResponseWriter, r *http.Request) (*getMyProfileR
 	}))
 	reqParams := newGetMyProfileRequestParams(r)
 	views := getMyProfileViews{
-		index: newView("my/profile/index.html").addParams(reqParams.toViewParams()),
+		profile: newView("my/profile.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		views.profile.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -105,7 +105,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	// create or get settings Flow
 	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
-		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.profile.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 	slog.DebugContext(ctx, "handleGetMyProfile", "settingsFlow", settingsFlow)
@@ -132,7 +132,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	if reqParams.SavedNickname != "" {
 		nickname = reqParams.SavedNickname
 	}
-	views.index.addParams(map[string]any{
+	views.profile.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
 		"Email":          email,
@@ -142,7 +142,5 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 		"BirthdateYear":  year,
 		"BirthdateMonth": month,
 		"BirthdateDay":   day,
-		"TotpQR":         "src=" + settingsFlow.TotpQR,
-		"TotpRegisted":   settingsFlow.TotpUnlink,
 	}).render(w, r, session)
 }

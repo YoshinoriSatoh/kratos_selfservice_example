@@ -34,7 +34,7 @@ func newMyTotpRequestParams(r *http.Request) *postMyTotpRequestPostForm {
 // Return parameters that can refer in view template
 func (p *postMyTotpRequestPostForm) toViewParams() map[string]any {
 	return map[string]any{
-		"SettingsFlowID": p.FlowID,
+		"SettingsTotpID": p.FlowID,
 		"CsrfToken":      p.CsrfToken,
 		"TotpCode":       p.TotpCode,
 		"TotpUnlink":     p.TotpUnlink,
@@ -53,8 +53,9 @@ func (params *postMyTotpRequestPostForm) validate() *viewError {
 
 // Views
 type getMyTotpPostViews struct {
-	form       *view
+	totpForm   *view
 	loginIndex *view
+	loginCode  *view
 }
 
 // collect rendering data and validate request parameters.
@@ -68,13 +69,14 @@ func prepareGetMyTotpPost(w http.ResponseWriter, r *http.Request) (*postMyTotpRe
 	}))
 	reqParams := newMyTotpRequestParams(r)
 	views := getMyTotpPostViews{
-		form:       newView("my/profile/_form.html").addParams(reqParams.toViewParams()),
+		totpForm:   newView("my/profile/_totp_form.html").addParams(reqParams.toViewParams()),
 		loginIndex: newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+		loginCode:  newView("auth/login/code.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		views.totpForm.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -94,7 +96,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// update settings flow
-	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateSettingsFlowRequestBody{
@@ -110,47 +112,77 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		// redirect not use. htmx implementation policy.
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
-			// create login flow
-			createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-				Header:  kratosReqHeaderForNext,
-				Refresh: true,
-			})
-			if err != nil {
-				views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-				return
+			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
+				Method:   "totp",
+				TotpCode: reqParams.TotpCode,
 			}
 
-			// for re-render totp form
-			myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
-				"SettingsFlowID": reqParams.FlowID,
-				"Information":    "ログインされました。TOTPを更新できます。",
-				"CsrfToken":      reqParams.CsrfToken,
-				"TotpCode":       reqParams.TotpCode,
-			})
+			if kratos.SessionRequiredAal == kratos.Aal1 {
+				// create login flow
+				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  kratosReqHeaderForNext,
+					Aal:     kratos.Aal1,
+					Refresh: true,
+				})
+				if err != nil {
+					views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
 
-			hook := &hook{
-				HookID: HookIDUpdateSettingsProfile,
-				UpdateSettingsProfileParams: HookParamsUpdateSettingsProfile{
-					FlowID:    reqParams.FlowID,
-					CsrfToken: reqParams.CsrfToken,
-				},
+				// render login form
+				addCookies(w, createLoginFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				views.loginIndex.addParams(map[string]any{
+					"LoginFlowID":                 createLoginFlowResp.LoginFlow.FlowID,
+					"Information":                 "認証アプリ設定のために再度ログインをお願いします。",
+					"CsrfToken":                   createLoginFlowResp.LoginFlow.CsrfToken,
+					"UpdateSettingsAfterLoggedIn": afterLoggedInParams.toString(),
+				}).render(w, r, session)
+
+			} else if kratos.SessionRequiredAal == kratos.Aal2 {
+				// create and update login flow for aal2, send authentication code
+				createLoginFlowResp, kratosReqHeaderForNext, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  makeDefaultKratosRequestHeader(r),
+					Aal:     kratos.Aal2,
+					Refresh: true,
+				})
+				if err != nil {
+					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
+					views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+					FlowID: createLoginFlowResp.LoginFlow.FlowID,
+					Header: kratosReqHeaderForNext,
+					Aal:    kratos.Aal2,
+					Body: kratos.UpdateLoginFlowRequestBody{
+						Method:     "code",
+						CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,
+						Identifier: createLoginFlowResp.LoginFlow.CodeAddress,
+					},
+				})
+				if err != nil {
+					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
+					views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				addCookies(w, createLoginFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				views.loginCode.addParams(map[string]any{
+					"LoginFlowID":                 createLoginFlowResp.LoginFlow.FlowID,
+					"Information":                 "認証アプリ更新のために再度ログインをお願いします。",
+					"CsrfToken":                   createLoginFlowResp.LoginFlow.CsrfToken,
+					"Identifier":                  createLoginFlowResp.LoginFlow.CodeAddress,
+					"UpdateSettingsAfterLoggedIn": afterLoggedInParams.toString(),
+				}).render(w, r, session)
 			}
-
-			// render login form
-			addCookies(w, createLoginFlowResp.Header.Cookie)
-			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-			views.loginIndex.addParams(map[string]any{
-				"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
-				"Information": "TOTP更新のために再度ログインをお願いします。",
-				"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,
-				"Render":      myProfileIndexView.toQueryParam(),
-				"Hook":        hook.toQueryParam(),
-			}).render(w, r, session)
 			return
 		}
 
 		// render form with error
-		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -160,7 +192,22 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 	})
 	session = whoamiResp.Session
 
+	// create or get settings Flow
+	createSettingsTotpResp, kratosReqHeader, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+		Header: makeDefaultKratosRequestHeader(r),
+	})
+	if err != nil {
+		views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+	slog.DebugContext(ctx, "handlePostMyTotp", "createSettingsTotpResp", createSettingsTotpResp)
+
 	// render top page
-	addCookies(w, kratosResp.Header.Cookie)
-	views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	addCookies(w, kratosReqHeader.Cookie)
+	views.totpForm.addParams(map[string]any{
+		"SettingsFlowID": createSettingsTotpResp.SettingsFlow.FlowID,
+		"CsrfToken":      createSettingsTotpResp.SettingsFlow.CsrfToken,
+		"TotpQR":         "src=" + createSettingsTotpResp.SettingsFlow.TotpQR,
+		"TotpRegisted":   createSettingsTotpResp.SettingsFlow.TotpUnlink,
+	}).render(w, r, session)
 }

@@ -15,35 +15,32 @@ import (
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLoginPassword
 type postAuthLoginPasswordRequestParams struct {
-	FlowID     string `validate:"uuid4"`
-	CsrfToken  string `validate:"required"`
-	Identifier string `validate:"required,email" ja:"メールアドレス"`
-	Password   string `validate:"required" ja:"パスワード"`
-	Render     string
-	Hook       string
+	FlowID                      string `validate:"uuid4"`
+	CsrfToken                   string `validate:"required"`
+	Identifier                  string `validate:"required,email" ja:"メールアドレス"`
+	Password                    string `validate:"required" ja:"パスワード"`
+	UpdateSettingsAfterLoggedIn string
 }
 
 // Extract parameters from http request
 func newPostAuthLoginPasswordRequestParams(r *http.Request) *postAuthLoginPasswordRequestParams {
 	return &postAuthLoginPasswordRequestParams{
-		FlowID:     r.URL.Query().Get("flow"),
-		Render:     r.PostFormValue("render"),
-		Hook:       r.PostFormValue("hook"),
-		CsrfToken:  r.PostFormValue("csrf_token"),
-		Identifier: r.PostFormValue("identifier"),
-		Password:   r.PostFormValue("password"),
+		FlowID:                      r.URL.Query().Get("flow"),
+		CsrfToken:                   r.PostFormValue("csrf_token"),
+		Identifier:                  r.PostFormValue("identifier"),
+		Password:                    r.PostFormValue("password"),
+		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
 	}
 }
 
 // Return parameters that can refer in view template
 func (p *postAuthLoginPasswordRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID": p.FlowID,
-		"Render":      p.Render,
-		"Hook":        p.Hook,
-		"CsrfToken":   p.CsrfToken,
-		"Identifier":  p.Identifier,
-		"Password":    p.Password,
+		"LoginFlowID":                 p.FlowID,
+		"CsrfToken":                   p.CsrfToken,
+		"Identifier":                  p.Identifier,
+		"Password":                    p.Password,
+		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
 	}
 }
 
@@ -60,10 +57,10 @@ func (params *postAuthLoginPasswordRequestParams) validate() *viewError {
 
 // Views
 type getAuthLoginPasswordPostViews struct {
-	index *view
-	code  *view
-	top   *view
-	mfa   *view
+	passwordForm *view
+	code         *view
+	top          *view
+	mfa          *view
 }
 
 // collect rendering data and validate request parameters.
@@ -77,15 +74,15 @@ func prepareGetAuthLoginPasswordPost(w http.ResponseWriter, r *http.Request) (*p
 	}))
 	reqParams := newPostAuthLoginPasswordRequestParams(r)
 	views := getAuthLoginPasswordPostViews{
-		index: newView("auth/login/_form.html").addParams(reqParams.toViewParams()),
-		code:  newView("auth/login/code.html").addParams(reqParams.toViewParams()),
-		top:   newView("top/index.html").addParams(reqParams.toViewParams()),
-		mfa:   newView("auth/login/mfa.html").addParams(reqParams.toViewParams()),
+		passwordForm: newView("auth/login/_password_form.html").addParams(reqParams.toViewParams()),
+		code:         newView("auth/login/code.html").addParams(reqParams.toViewParams()),
+		top:          newView("top/index.html").addParams(reqParams.toViewParams()),
+		mfa:          newView("auth/login/mfa.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		views.passwordForm.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -117,7 +114,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
-		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.passwordForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -131,108 +128,24 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 
 	// update session
 	session = &updateLoginFlowResp.Session
-	slog.DebugContext(ctx, "handlePostAuthLoginPassword", "session", session)
 
-	if reqParams.Hook != "" {
-		h := hookFromQueryParam(reqParams.Hook)
-		if h.HookID == HookIDUpdateSettingsProfile {
-			kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-				FlowID: h.UpdateSettingsProfileParams.FlowID,
-				Header: kratosReqHeaderForNext,
-				Body: kratos.UpdateSettingsFlowRequestBody{
-					CsrfToken: reqParams.CsrfToken,
-					Method:    "profile",
-					Traits:    h.UpdateSettingsProfileParams.Traits,
-				},
-			})
-			if err != nil {
-				views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-				return
-			}
-			if kratosResp.VerificationFlowID != "" {
-				// get verification flow
-				getVerificationFlowResp, _, err := kratos.GetVerificationFlow(ctx, kratos.GetVerificationFlowRequest{
-					FlowID: kratosResp.VerificationFlowID,
-					Header: kratosReqHeaderForNext,
-				})
-				if err != nil {
-					slog.ErrorContext(ctx, "get verification error", "err", err.Error())
-					views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-					return
-				}
-
-				whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-					Header: kratosReqHeaderForNext,
-				})
-
-				createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-					Header: makeDefaultKratosRequestHeader(r),
-				})
-				if err != nil {
-					views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-					return
-				}
-
-				// for re-render profile form
-				year, month, day := parseDate(h.UpdateSettingsProfileParams.Traits.Birthdate)
-				myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
-					"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
-					"Information":    "プロフィールが更新されました。",
-					"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
-					"Email":          whoamiResp.Session.Identity.Traits.Email,
-					"Firstname":      whoamiResp.Session.Identity.Traits.Firstname,
-					"Lastname":       whoamiResp.Session.Identity.Traits.Lastname,
-					"Nickname":       whoamiResp.Session.Identity.Traits.Nickname,
-					"BirthdateYear":  year,
-					"BirthdateMonth": month,
-					"BirthdateDay":   day,
-				})
-
-				// render verification code page (replace <body> tag and push url)
-				addCookies(w, getVerificationFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
-				newView("auth/verification/code.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
-					"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
-					"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
-					"IsUsedFlow":         getVerificationFlowResp.VerificationFlow.IsUsedFlow(),
-					"Render":             myProfileIndexView.toQueryParam(),
-				}).render(w, r, session)
-				return
-			}
-			whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-				Header: kratosReqHeaderForNext,
-			})
-
-			createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-				Header: makeDefaultKratosRequestHeader(r),
-			})
-			if err != nil {
-				views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-				return
-			}
-			year, month, day := parseDate(h.UpdateSettingsProfileParams.Traits.Birthdate)
-			addCookies(w, updateLoginFlowResp.Header.Cookie)
-			setHeadersForReplaceBody(w, "/my/profile")
-			newView("my/profile/index.html").addParams(map[string]any{
-				"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
-				"Information":    "プロフィールが更新されました。",
-				"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
-				"Email":          whoamiResp.Session.Identity.Traits.Email,
-				"Firstname":      whoamiResp.Session.Identity.Traits.Firstname,
-				"Lastname":       whoamiResp.Session.Identity.Traits.Lastname,
-				"Nickname":       whoamiResp.Session.Identity.Traits.Nickname,
-				"BirthdateYear":  year,
-				"BirthdateMonth": month,
-				"BirthdateDay":   day,
-			}).render(w, r, whoamiResp.Session)
+	// update settings(profile) flow after logged in
+	if reqParams.UpdateSettingsAfterLoggedIn != "" {
+		// create settings
+		createSettingsFlowResp, kratosReqHeaderForNext, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
 		}
-		return
-	}
 
-	if reqParams.Render != "" {
-		v := viewFromQueryParam(reqParams.Render)
-		setHeadersForReplaceBody(w, v.Path)
-		viewFromQueryParam(reqParams.Render).render(w, r, session)
+		// update settings
+		updateSettingsAfterLoggedIn(ctx, w, r, session,
+			createSettingsFlowResp.SettingsFlow.FlowID,
+			createSettingsFlowResp.SettingsFlow.CsrfToken,
+			kratosReqHeaderForNext,
+			updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
 		return
 	}
 

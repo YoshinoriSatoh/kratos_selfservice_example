@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 type KratosRequestHeader struct {
@@ -34,11 +35,36 @@ type kratosResponse struct {
 	Header     KratosResponseHeader
 }
 
+func existSameCookie(respCookie []string, reqCookieName string) bool {
+	for _, respc := range respCookie {
+		respCookieName := strings.Split(respc, "=")[0]
+		slog.Debug("buildCookieForNext", "respc", respc)
+		if respCookieName == reqCookieName {
+			return true
+		}
+	}
+	return false
+}
+
+func buildCookieForNext(respCookie []string, reqCookie []string) []string {
+	requestCookieForNext := respCookie
+	for _, reqc := range reqCookie {
+		reqCookieName := strings.Split(reqc, "=")[0]
+		slog.Debug("buildCookieForNext", "reqc", reqc)
+		if !existSameCookie(respCookie, reqCookieName) {
+			requestCookieForNext = append(requestCookieForNext, reqc)
+		}
+	}
+
+	slog.Debug("buildCookieForNext", "requestCookieForNext", requestCookieForNext)
+	return requestCookieForNext
+}
+
 func requestKratosPublic(ctx context.Context, i kratosRequest) (kratosResponse, KratosRequestHeader, error) {
 	resp, err := requestKratos(ctx, pkgVars.kratosPublicEndpoint, i)
 	reqHeader := i.Header
-	reqHeader.Cookie = resp.Header.Cookie
-	// reqHeader.Cookie = strings.Join(resp.Header.Cookie, " ")
+	// reqHeader.Cookie = resp.Header.Cookie
+	reqHeader.Cookie = buildCookieForNext(resp.Header.Cookie, reqHeader.Cookie)
 	return resp, reqHeader, err
 }
 
@@ -96,7 +122,7 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 	}
 
 	if i.Path != "/sessions/whoami" {
-		slog.InfoContext(ctx, "requestKratos", "status code", resp.StatusCode, "body", string(body), "header", resp.Header)
+		slog.InfoContext(ctx, "requestKratos", "status code", resp.StatusCode, "header", resp.Header, "body", string(body))
 	}
 
 	return kratosResponse{
@@ -185,11 +211,11 @@ func getCsrfTokenFromFlowUi(ui uiContainer) string {
 }
 
 func getTotpQRFromFlowUi(ui uiContainer) string {
-	slog.Debug("getTotpQRFromFlowUi", "ui", ui)
+	// slog.Debug("getTotpQRFromFlowUi", "ui", ui)
 	for _, node := range ui.Nodes {
-		slog.Debug("getTotpQRFromFlowUi", "node", node)
+		// slog.Debug("getTotpQRFromFlowUi", "node", node)
 		if node.Attributes.ID == "totp_qr" {
-			slog.Debug("getTotpQRFromFlowUi", "src", node.Attributes.Src)
+			// slog.Debug("getTotpQRFromFlowUi", "src", node.Attributes.Src)
 			return node.Attributes.Src
 		}
 	}
@@ -198,9 +224,9 @@ func getTotpQRFromFlowUi(ui uiContainer) string {
 }
 
 func getTotpUnlinkFromFlowUi(ui uiContainer) bool {
-	slog.Debug("getTotpUnlinkFromFlowUi", "ui", ui)
+	// slog.Debug("getTotpUnlinkFromFlowUi", "ui", ui)
 	for _, node := range ui.Nodes {
-		slog.Debug("getTotpUnlinkFromFlowUi", "node", node)
+		// slog.Debug("getTotpUnlinkFromFlowUi", "node", node)
 		if node.Attributes.Name == "totp_unlink" {
 			return true
 		}
@@ -218,6 +244,18 @@ func getErrorMessagesFromUi(ui uiContainer) error {
 				Type: v.Type,
 				Text: v.Text,
 			})
+		}
+	}
+
+	for _, node := range ui.Nodes {
+		for _, v := range node.Messages {
+			if v.Type == "error" {
+				messages = append(messages, ErrorUiMessage{
+					ID:   v.ID,
+					Type: v.Type,
+					Text: v.Text,
+				})
+			}
 		}
 	}
 

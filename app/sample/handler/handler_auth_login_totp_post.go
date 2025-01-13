@@ -15,29 +15,32 @@ import (
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLoginTotp
 type postAuthLoginTotpRequestParams struct {
-	FlowID     string `validate:"uuid4"`
-	CsrfToken  string `validate:"required"`
-	Identifier string `validate:"required,email" ja:"メールアドレス"`
-	TotpCode   string `validate:"required" ja:"認証コード"`
+	FlowID                      string `validate:"uuid4"`
+	CsrfToken                   string `validate:"required"`
+	Identifier                  string `validate:"required,email" ja:"メールアドレス"`
+	TotpCode                    string `validate:"required" ja:"認証コード"`
+	UpdateSettingsAfterLoggedIn string
 }
 
 // Extract parameters from http request
 func newPostAuthLoginTotpRequestParams(r *http.Request) *postAuthLoginTotpRequestParams {
 	return &postAuthLoginTotpRequestParams{
-		FlowID:     r.URL.Query().Get("flow"),
-		CsrfToken:  r.PostFormValue("csrf_token"),
-		Identifier: r.PostFormValue("identifier"),
-		TotpCode:   r.PostFormValue("totp_code"),
+		FlowID:                      r.URL.Query().Get("flow"),
+		CsrfToken:                   r.PostFormValue("csrf_token"),
+		Identifier:                  r.PostFormValue("identifier"),
+		TotpCode:                    r.PostFormValue("totp_code"),
+		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
 	}
 }
 
 // Return parameters that can refer in view template
 func (p *postAuthLoginTotpRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID": p.FlowID,
-		"CsrfToken":   p.CsrfToken,
-		"Identifier":  p.Identifier,
-		"Totp":        p.TotpCode,
+		"LoginFlowID":                 p.FlowID,
+		"CsrfToken":                   p.CsrfToken,
+		"Identifier":                  p.Identifier,
+		"Totp":                        p.TotpCode,
+		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
 	}
 }
 
@@ -94,7 +97,7 @@ func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Reques
 	}
 
 	// update login flow
-	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal2,
@@ -113,7 +116,26 @@ func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Reques
 
 	// update session
 	session = &updateLoginFlowResp.Session
-	slog.DebugContext(ctx, "handlePostAuthLoginTotp", "session", session)
+
+	// update settings(profile) flow after logged in
+	if reqParams.UpdateSettingsAfterLoggedIn != "" {
+		// create settings
+		createSettingsFlowResp, kratosReqHeaderForNext, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+
+		// update settings
+		updateSettingsAfterLoggedIn(ctx, w, r, session,
+			createSettingsFlowResp.SettingsFlow.FlowID,
+			createSettingsFlowResp.SettingsFlow.CsrfToken,
+			kratosReqHeaderForNext,
+			updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
+		return
+	}
 
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")

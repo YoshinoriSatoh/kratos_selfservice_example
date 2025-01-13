@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
@@ -78,13 +81,13 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	mux.Handle("POST /auth/recovery/email", p.baseMiddleware(p.handlePostAuthRecoveryEmail))
 	mux.Handle("POST /auth/recovery/code", p.baseMiddleware(p.handlePostAuthRecoveryCode))
 
-	// My Password
+	// My
+	mux.Handle("GET /my", p.baseMiddleware(p.handleGetMy))
 	mux.Handle("GET /my/password", p.baseMiddleware(p.handleGetMyPassword))
 	mux.Handle("POST /my/password", p.baseMiddleware(p.handlePostMyPassword))
-
-	// My Profile
 	mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
 	mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
+	mux.Handle("GET /my/totp", p.baseMiddleware(p.handleGetMyTotp))
 	mux.Handle("POST /my/totp", p.baseMiddleware(p.handlePostMyTotp))
 
 	// Top
@@ -109,6 +112,27 @@ type ctxRequestID struct{}
 type ctxRemoteAddr struct{}
 type ctxCookie struct{}
 type ctxSession struct{}
+
+func isIgnoreLogging(r *http.Request) bool {
+	for _, v := range loggingIgnorePaths {
+		if strings.HasSuffix(v, "/") {
+			if strings.HasPrefix(r.URL.Path, v) {
+				return true
+			}
+		} else {
+			if r.URL.Path == v {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var loggingIgnorePaths []string = []string{
+	"/health",
+	"/assets/",
+	"/favicon.ico",
+}
 
 func (p *Provider) fetchSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -135,11 +159,15 @@ func (p *Provider) fetchSession(next http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, ctxSession{}, *whoamiResp.Session)
 		}
 
-		if r.URL.Path != "/favicon.ico" {
-			slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path, "session", whoamiResp.Session)
+		if isIgnoreLogging(r) {
+			bufOfRequestBody, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewBuffer(bufOfRequestBody))
+			var out io.Writer = os.Stdout
+			slog.InfoContext(ctx, "[Request]", "method", r.Method, "path", r.URL.Path, "body", out, "session", whoamiResp.Session)
 		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
+
 	})
 }
 

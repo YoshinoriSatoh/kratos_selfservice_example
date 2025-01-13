@@ -18,7 +18,7 @@
   </div>
   {{end}}
   
-  {{template "auth/login/_form.html" .}}
+  {{template "auth/login/_password_form.html" .}}
 
   {{ if or (eq .ShowSocialLogin true) (eq .ShowPasskeyLogin true) }}
   <div class="flex py-5 items-center">
@@ -29,7 +29,7 @@
   {{ end }}
 
   {{ if eq .ShowPasskeyLogin true }}
-  {{template "auth/login/_form_passkey.html" .}}
+  {{template "auth/login/_passkey_form.html" .}}
   {{ end }}
 
   {{ if eq .ShowSocialLogin true }}

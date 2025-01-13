@@ -41,7 +41,6 @@ func Whoami(ctx context.Context, r WhoamiRequest) (WhoamiResponse, error) {
 		slog.ErrorContext(ctx, "Whoami", "json unmarshal error", err)
 		return WhoamiResponse{}, err
 	}
-	slog.DebugContext(ctx, "whoami", "session", session, "raw", string(kratosResp.BodyBytes))
 
 	response := WhoamiResponse{
 		Header:  kratosResp.Header,

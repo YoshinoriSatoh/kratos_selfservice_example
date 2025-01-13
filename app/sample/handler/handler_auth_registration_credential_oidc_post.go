@@ -77,7 +77,7 @@ func prepareGetAuthRegistrationCredentialOidc(w http.ResponseWriter, r *http.Req
 	}))
 	reqParams := newpostAuthRegistrationCredentialOidcRequestParams(r)
 	views := getAuthRegistrationCredentialOidcViews{
-		form: newView("auth/registration/_form_profile.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
+		form: newView("auth/registration/_profile_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "oidc"}),
 	}
 
 	// validate request parameters

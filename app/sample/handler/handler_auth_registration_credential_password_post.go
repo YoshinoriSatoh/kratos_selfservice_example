@@ -90,7 +90,7 @@ func prepareGetAuthRegistrationCredentialPassword(w http.ResponseWriter, r *http
 	}))
 	reqParams := newPostAuthRegistrationPasswordRequestParams(r)
 	views := getAuthRegistrationCredentialPasswordViews{
-		form: newView("auth/registration/_form_credential_password.html").addParams(reqParams.toViewParams()),
+		form: newView("auth/registration/_credential_password_form.html").addParams(reqParams.toViewParams()),
 		code: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
 	}
 

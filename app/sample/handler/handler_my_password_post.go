@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -58,7 +59,9 @@ func (params *postMyPasswordRequestParams) validate() *viewError {
 
 // Views
 type getMyPasswordPostViews struct {
-	form *view
+	passwordForm *view
+	loginIndex   *view
+	loginCode    *view
 }
 
 // collect rendering data and validate request parameters.
@@ -72,12 +75,14 @@ func prepareGetMyPasswordPost(w http.ResponseWriter, r *http.Request) (*postMyPa
 	}))
 	reqParams := newMyPasswordRequestParams(r)
 	views := getMyPasswordPostViews{
-		form: newView("my/password/_form.html").addParams(reqParams.toViewParams()),
+		passwordForm: newView("my/_password_form.html").addParams(reqParams.toViewParams()),
+		loginIndex:   newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+		loginCode:    newView("auth/login/code.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		views.passwordForm.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -99,7 +104,7 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 	// prepare views
 	topIndexView := newView("top/index.html").addParams(reqParams.toViewParams())
 
-	kratosResp, _, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateSettingsFlowRequestBody{
@@ -109,7 +114,83 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 		},
 	})
 	if err != nil {
-		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "handlePostMyPassword", "err", err)
+		// render login form when session expired privileged_session_max_age, and re-render profile form.
+		// redirect not use. htmx implementation policy.
+		var errGeneric kratos.ErrorGeneric
+		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
+			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
+				Method:   "password",
+				Password: reqParams.Password,
+			}
+
+			if kratos.SessionRequiredAal == kratos.Aal1 {
+				// create login flow
+				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  kratosReqHeaderForNext,
+					Aal:     kratos.Aal1,
+					Refresh: true,
+				})
+				if err != nil {
+					views.passwordForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				// render login form
+				addCookies(w, createLoginFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				views.loginIndex.addParams(map[string]any{
+					"LoginFlowID":                 createLoginFlowResp.LoginFlow.FlowID,
+					"Information":                 "パスワード更新のために再度ログインをお願いします。",
+					"CsrfToken":                   createLoginFlowResp.LoginFlow.CsrfToken,
+					"UpdateSettingsAfterLoggedIn": afterLoggedInParams.toString(),
+				}).render(w, r, session)
+
+			} else if kratos.SessionRequiredAal == kratos.Aal2 {
+				// create and update login flow for aal2, send authentication code
+				createLoginFlowResp, kratosReqHeaderForNext, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  makeDefaultKratosRequestHeader(r),
+					Aal:     kratos.Aal2,
+					Refresh: true,
+				})
+				if err != nil {
+					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
+					views.passwordForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				// update login flow for aal2, send authentication code
+				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+					FlowID: createLoginFlowResp.LoginFlow.FlowID,
+					Header: kratosReqHeaderForNext,
+					Aal:    kratos.Aal2,
+					Body: kratos.UpdateLoginFlowRequestBody{
+						Method:     "code",
+						CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,
+						Identifier: createLoginFlowResp.LoginFlow.CodeAddress,
+					},
+				})
+				if err != nil {
+					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
+					views.passwordForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				addCookies(w, createLoginFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				views.loginCode.addParams(map[string]any{
+					"LoginFlowID":                 createLoginFlowResp.LoginFlow.FlowID,
+					"Information":                 "パスワード更新のために再度ログインをお願いします。",
+					"CsrfToken":                   createLoginFlowResp.LoginFlow.CsrfToken,
+					"Identifier":                  createLoginFlowResp.LoginFlow.CodeAddress,
+					"UpdateSettingsAfterLoggedIn": afterLoggedInParams.toString(),
+				}).render(w, r, session)
+			}
+			return
+		}
+
+		// render form with error
+		views.passwordForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 

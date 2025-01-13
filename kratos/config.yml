@@ -97,7 +97,7 @@ selfservice:
     totp:
       config:
         # The "issuer" is the name in the TOTP application users see when getting a one-time password.
-        issuer: ExampleIssuer.com
+        issuer: kratos_example
       enabled: true
   flows:
     registration:
@@ -122,7 +122,7 @@ selfservice:
       use: code 
     settings:
       ui_url: http://localhost:3000/my/password
-      privileged_session_max_age: 100m
+      privileged_session_max_age: 30s 
       required_aal: highest_available
       # required_aal: aal1
       # profile:

@@ -84,8 +84,8 @@ func preparePostAuthRegistrationProfile(w http.ResponseWriter, r *http.Request) 
 	}))
 	reqParams := newPostAuthRegistrationProfileRequestParams(r)
 	views := getAuthRegistrationProfileViews{
-		formProfile:    newView("auth/registration/_form_profile.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "profile"}),
-		formCredential: newView("auth/registration/_form_credential.html").addParams(reqParams.toViewParams()),
+		formProfile:    newView("auth/registration/_profile_form.html").addParams(reqParams.toViewParams()).addParams(map[string]any{"Method": "profile"}),
+		formCredential: newView("auth/registration/_credential_form.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters

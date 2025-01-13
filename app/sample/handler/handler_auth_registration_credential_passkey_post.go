@@ -78,7 +78,7 @@ func prepareGetAuthRegistrationCredentialPasskey(w http.ResponseWriter, r *http.
 	}))
 	reqParams := newpostAuthRegistrationCredentialPasskeyRequestParams(r)
 	views := getAuthRegistrationCredentialPasskeyViews{
-		form: newView("auth/registration/_form_credential_passkey.html").addParams(reqParams.toViewParams()),
+		form: newView("auth/registration/_credential_passkey_form.html").addParams(reqParams.toViewParams()),
 		code: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
 	}
 

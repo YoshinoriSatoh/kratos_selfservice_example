@@ -1,0 +1,56 @@
+{{define "my/_totp_form.html"}}
+
+<form 
+  id="totp-form"
+  hx-post="/my/totp?flow={{.SettingsFlowID}}" 
+  hx-swap="outerHTML" 
+  hx-target="this"
+>
+  <input
+    name="csrf_token"
+    type="hidden"
+    value="{{.CsrfToken}}"
+  />
+
+  {{ if eq .TotpRegisted false }}
+    <p class="mt-6">認証アプリは未登録です。<br />認証アプリでQRコードを読み取り、表示される認証コードを入力してください。</p>
+
+    <img class="h-auto max-w-lg mx-auto mt-6 text-center" {{ .TotpQR|safeattr}}>
+    
+    <div class="mt-6">
+      {{ template "components/_input.html" dict 
+        "type" "text" 
+        "name" "totp_code" 
+        "label" "認証コード" 
+        "validationErrorMessage" .ValidationFieldError.Code.Message 
+      }}
+    </div>
+
+    <div class="mt-6 mx-auto text-center">
+      <button 
+        type="submit" 
+        class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+      >更新</button>
+    </div>
+  {{ else }}
+    <p class="my-6">認証アプリは登録済みです</p>
+    <input
+      name="totp_unlink"
+      type="hidden"
+      value="true"
+    />
+    <div class="mx-auto text-center">
+      <button 
+        type="submit" 
+        class="w-80 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
+      >認証アプリを解除</button>
+    </div>
+  {{ end }}
+  {{ if and (ne .Messages nil) (gt (len .Messages) 0) }}
+    <div class="mt-6">
+      {{ template "compnents/_messages.html" .Messages }}
+    </div>
+  {{ end }}
+</form>
+
+{{end}}

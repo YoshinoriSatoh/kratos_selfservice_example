@@ -85,8 +85,9 @@ func makeTraitsForUpdateSettings(session *kratos.Session, params *postMyProfileR
 
 // Views
 type getMyProfilePostViews struct {
-	form             *view
+	profileForm      *view
 	loginIndex       *view
+	loginCode        *view
 	verificationCode *view
 	topIndex         *view
 }
@@ -102,15 +103,16 @@ func prepareGetMyProfilePost(w http.ResponseWriter, r *http.Request) (*postMyPro
 	}))
 	reqParams := newMyProfileRequestParams(r)
 	views := getMyProfilePostViews{
-		form:             newView("my/profile/_form.html").addParams(reqParams.toViewParams()),
+		profileForm:      newView("my/_profile_form.html").addParams(reqParams.toViewParams()),
 		loginIndex:       newView("auth/login/index.html").addParams(reqParams.toViewParams()),
+		loginCode:        newView("auth/login/code.html").addParams(reqParams.toViewParams()),
 		verificationCode: newView("auth/verification/code.html").addParams(reqParams.toViewParams()),
 		topIndex:         newView("top/index.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.form.addParams(viewError.toViewParams()).render(w, r, session)
+		views.profileForm.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -140,59 +142,83 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "handlePostMyProfile", "err", err)
 		// render login form when session expired privileged_session_max_age, and re-render profile form.
 		// redirect not use. htmx implementation policy.
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
-			// create login flow
-			createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-				Header:  kratosReqHeaderForNext,
-				Refresh: true,
-			})
-			if err != nil {
-				views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-				return
+			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
+				Method: "profile",
+				Traits: makeTraitsForUpdateSettings(session, reqParams),
 			}
 
-			// for re-render profile form
-			year, month, day := parseDate(reqParams.Birthdate)
-			myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
-				"SettingsFlowID": reqParams.FlowID,
-				"Information":    "ログインされました。プロフィールを更新できます。",
-				"CsrfToken":      reqParams.CsrfToken,
-				"Email":          reqParams.Email,
-				"Firstname":      reqParams.Firstname,
-				"Lastname":       reqParams.Lastname,
-				"Nickname":       reqParams.Nickname,
-				"BirthdateYear":  year,
-				"BirthdateMonth": month,
-				"BirthdateDay":   day,
-			})
+			if kratos.SessionRequiredAal == kratos.Aal1 {
+				// create login flow
+				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  makeDefaultKratosRequestHeader(r),
+					Refresh: true,
+					Aal:     kratos.Aal1,
+				})
+				if err != nil {
+					views.profileForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
 
-			hook := &hook{
-				HookID: HookIDUpdateSettingsProfile,
-				UpdateSettingsProfileParams: HookParamsUpdateSettingsProfile{
-					FlowID:    reqParams.FlowID,
-					CsrfToken: reqParams.CsrfToken,
-					Traits:    makeTraitsForUpdateSettings(session, reqParams),
-				},
+				// render login form
+				addCookies(w, createLoginFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				views.loginIndex.addParams(map[string]any{
+					"LoginFlowID":                 createLoginFlowResp.LoginFlow.FlowID,
+					"Information":                 "プロフィール更新のために再度ログインをお願いします。",
+					"CsrfToken":                   createLoginFlowResp.LoginFlow.CsrfToken,
+					"UpdateSettingsAfterLoggedIn": afterLoggedInParams.toString(),
+				}).render(w, r, session)
+
+			} else if kratos.SessionRequiredAal == kratos.Aal2 {
+				// create and update login flow for aal2, send authentication code
+				createLoginFlowResp, kratosReqHeaderForNext, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  makeDefaultKratosRequestHeader(r),
+					Aal:     kratos.Aal2,
+					Refresh: true,
+				})
+				if err != nil {
+					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
+					views.profileForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				// update login flow for aal2, send authentication code
+				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+					FlowID: createLoginFlowResp.LoginFlow.FlowID,
+					Header: kratosReqHeaderForNext,
+					Aal:    kratos.Aal2,
+					Body: kratos.UpdateLoginFlowRequestBody{
+						Method:     "code",
+						CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,
+						Identifier: createLoginFlowResp.LoginFlow.CodeAddress,
+					},
+				})
+				if err != nil {
+					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
+					views.profileForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					return
+				}
+
+				addCookies(w, createLoginFlowResp.Header.Cookie)
+				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				views.loginCode.addParams(map[string]any{
+					"LoginFlowID":                 createLoginFlowResp.LoginFlow.FlowID,
+					"Information":                 "プロフィール更新のために再度ログインをお願いします。",
+					"CsrfToken":                   createLoginFlowResp.LoginFlow.CsrfToken,
+					"Identifier":                  createLoginFlowResp.LoginFlow.CodeAddress,
+					"UpdateSettingsAfterLoggedIn": afterLoggedInParams.toString(),
+				}).render(w, r, session)
 			}
-
-			// render login form
-			addCookies(w, createLoginFlowResp.Header.Cookie)
-			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-			views.loginIndex.addParams(map[string]any{
-				"LoginFlowID": createLoginFlowResp.LoginFlow.FlowID,
-				"Information": "プロフィール更新のために再度ログインをお願いします。",
-				"CsrfToken":   createLoginFlowResp.LoginFlow.CsrfToken,
-				"Render":      myProfileIndexView.toQueryParam(),
-				"Hook":        hook.toQueryParam(),
-			}).render(w, r, session)
 			return
 		}
 
 		// render form with error
-		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.profileForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -202,6 +228,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	})
 	session = whoamiResp.Session
 
+	// verification required when modified email in traits
 	if kratosResp.VerificationFlowID != "" {
 		// transition to verification flow from settings flow
 
@@ -212,7 +239,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "get verification error", "err", err.Error())
-			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			views.profileForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 
@@ -220,13 +247,13 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		if err != nil {
-			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			views.profileForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 
 		// for re-render profile form
 		year, month, day := parseDate(reqParams.Birthdate)
-		myProfileIndexView := newView("my/profile/index.html").addParams(map[string]any{
+		myProfileIndexView := newView("my/profile.html").addParams(map[string]any{
 			"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
 			"Information":    "プロフィールが更新されました。",
 			"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,

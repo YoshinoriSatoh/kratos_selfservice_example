@@ -11,21 +11,21 @@ import (
 )
 
 // --------------------------------------------------------------------------
-// GET /my/password
+// GET /my/totp
 // --------------------------------------------------------------------------
-type getMyPasswordRequestParams struct {
+type getMyTotpRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
 }
 
 // Extract parameters from http request
-func newGetMyPasswordRequestParams(r *http.Request) *getMyPasswordRequestParams {
-	return &getMyPasswordRequestParams{
+func newGetMyTotpRequestParams(r *http.Request) *getMyTotpRequestParams {
+	return &getMyTotpRequestParams{
 		FlowID: r.URL.Query().Get("flow"),
 	}
 }
 
 // Return parameters that can refer in view template
-func (p *getMyPasswordRequestParams) toViewParams() map[string]any {
+func (p *getMyTotpRequestParams) toViewParams() map[string]any {
 	return map[string]any{
 		"SettingsFlowID": p.FlowID,
 	}
@@ -34,7 +34,7 @@ func (p *getMyPasswordRequestParams) toViewParams() map[string]any {
 // Validate request parameters and return viewError
 // If you do not want Validation errors to be displayed near input fields,
 // store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getMyPasswordRequestParams) validate() *viewError {
+func (p *getMyTotpRequestParams) validate() *viewError {
 	viewError := newViewError().extract(pkgVars.validate.Struct(p))
 
 	for k := range viewError.validationFieldErrors {
@@ -54,57 +54,59 @@ func (p *getMyPasswordRequestParams) validate() *viewError {
 }
 
 // Views
-type getMyPasswordViews struct {
-	password *view
+type getMyTotpViews struct {
+	totp *view
 }
 
 // collect rendering data and validate request parameters.
-func prepareGetMyPassword(w http.ResponseWriter, r *http.Request) (*getMyPasswordRequestParams, getMyPasswordViews, *viewError, error) {
+func prepareGetMyTotp(w http.ResponseWriter, r *http.Request) (*getMyTotpRequestParams, getMyTotpViews, *viewError, error) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
+		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
 	}))
-	reqParams := newGetMyPasswordRequestParams(r)
-	views := getMyPasswordViews{
-		password: newView("my/password.html").addParams(reqParams.toViewParams()),
+	reqParams := newGetMyTotpRequestParams(r)
+	views := getMyTotpViews{
+		totp: newView("my/totp.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.password.addParams(viewError.toViewParams()).render(w, r, session)
+		views.totp.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
 	return reqParams, views, baseViewError, nil
 }
 
-func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleGetMyTotp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetMyPassword(w, r)
+	reqParams, views, baseViewError, err := prepareGetMyTotp(w, r)
 	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetMyPassword failed", "err", err)
+		slog.ErrorContext(ctx, "prepareGetMyTotp failed", "err", err)
 		return
 	}
 
 	// create or get settings Flow
 	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
-		views.password.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
+	slog.DebugContext(ctx, "handleGetMyTotp", "settingsFlow", settingsFlow)
 
 	// add cookies to the request header
 	addCookies(w, kratosResponseHeader.Cookie)
 
-	// render page
-	views.password.addParams(map[string]any{
+	views.totp.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
+		"TotpQR":         "src=" + settingsFlow.TotpQR,
+		"TotpRegisted":   settingsFlow.TotpUnlink,
 	}).render(w, r, session)
 }

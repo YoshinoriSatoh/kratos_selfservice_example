@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -52,8 +53,8 @@ func (params *postAuthRecoveryCodeRequestParams) validate() *viewError {
 
 // Views
 type getAuthRecoveryCodeViews struct {
-	index           *view
-	myPasswordIndex *view
+	recoveryCodeForm *view
+	myPassword       *view
 }
 
 // collect rendering data and validate request parameters.
@@ -67,13 +68,13 @@ func prepareGetAuthRecoveryCode(w http.ResponseWriter, r *http.Request) (*postAu
 	}))
 	reqParams := newPostAutRecoveryCodeRequestParams(r)
 	views := getAuthRecoveryCodeViews{
-		index:           newView("auth/recovery/_code_form.html").addParams(reqParams.toViewParams()),
-		myPasswordIndex: newView("my/password/index.html").addParams(reqParams.toViewParams()),
+		recoveryCodeForm: newView("auth/recovery/_code_form.html").addParams(reqParams.toViewParams()),
+		myPassword:       newView("my/password.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		views.recoveryCodeForm.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -103,7 +104,7 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		},
 	})
 	if err != nil {
-		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.recoveryCodeForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -118,12 +119,21 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 			Header: kratosRequestHeader,
 		})
 		if err != nil {
-			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			slog.ErrorContext(ctx, "handlePostAuthRecoveryCode", "err", err)
+			var errGeneric kratos.ErrorGeneric
+			if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_aal2_required" {
+				// afterLoggedInParams := &showSettingsAfterLoggedInParams{
+				// 	FlowID: reqParams.FlowID,
+				// 	Method: "password",
+				// }
+				return
+			}
+			views.recoveryCodeForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 		addCookies(w, getSettingsFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", settingsFlowID))
-		views.myPasswordIndex.addParams(map[string]any{
+		views.myPassword.addParams(map[string]any{
 			"SettingsFlowID": settingsFlowID,
 			"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
 		}).render(w, r, session)

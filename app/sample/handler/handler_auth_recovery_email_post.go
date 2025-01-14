@@ -51,7 +51,8 @@ func (params *postAuthRecoveryEmailRequestParams) validate() *viewError {
 
 // Views
 type getAuthRecoveryEmailViews struct {
-	index *view
+	emailForm *view
+	codeForm  *view
 }
 
 // collect rendering data and validate request parameters.
@@ -65,12 +66,13 @@ func prepareGetAuthRecoveryEmail(w http.ResponseWriter, r *http.Request) (*postA
 	}))
 	reqParams := newPostAutRecoveryEmailRequestParams(r)
 	views := getAuthRecoveryEmailViews{
-		index: newView("auth/recovery/_email_form.html").addParams(reqParams.toViewParams()),
+		emailForm: newView("auth/recovery/_email_form.html").addParams(reqParams.toViewParams()),
+		codeForm:  newView("auth/recovery/_code_form.html").addParams(reqParams.toViewParams()),
 	}
 
 	// validate request parameters
 	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
+		views.emailForm.addParams(viewError.toViewParams()).render(w, r, session)
 		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
 	}
 
@@ -99,7 +101,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 		},
 	})
 	if err != nil {
-		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		views.emailForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 	addCookies(w, kratosResp.Header.Cookie)
@@ -110,7 +112,7 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	}
 
 	// render
-	views.index.addParams(map[string]any{
+	views.codeForm.addParams(map[string]any{
 		"RecoveryFlowID":           reqParams.FlowID,
 		"CsrfToken":                reqParams.CsrfToken,
 		"Email":                    reqParams.Email,

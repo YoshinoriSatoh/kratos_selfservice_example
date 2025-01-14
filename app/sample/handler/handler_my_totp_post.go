@@ -114,10 +114,9 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
 			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
-				FlowID:    reqParams.FlowID,
-				CsrfToken: reqParams.CsrfToken,
-				Method:    "totp",
-				TotpCode:  reqParams.TotpCode,
+				FlowID:   reqParams.FlowID,
+				Method:   "totp",
+				TotpCode: reqParams.TotpCode,
 			}
 
 			if kratos.SessionRequiredAal == kratos.Aal1 {
@@ -172,7 +171,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				addCookies(w, kratosRequestHeader.Cookie)
+				// addCookies(w, kratosRequestHeader.Cookie)
 				addCookies(w, createLoginFlowResp.Header.Cookie)
 				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
 				views.loginCode.addParams(map[string]any{

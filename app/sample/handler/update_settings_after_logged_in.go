@@ -14,12 +14,11 @@ import (
 )
 
 type updateSettingsAfterLoggedInParams struct {
-	FlowID    string
-	CsrfToken string
-	Method    string
-	Traits    kratos.Traits
-	Password  string
-	TotpCode  string
+	FlowID   string
+	Method   string
+	Traits   kratos.Traits
+	Password string
+	TotpCode string
 }
 
 func (p *updateSettingsAfterLoggedInParams) toString() string {
@@ -40,17 +39,17 @@ func updateSettingsAfterLoggedInParamsFromString(base64str string) updateSetting
 	return h
 }
 
-func updateSettingsAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeaderAfterLoggedIn kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	if params.Method == "profile" {
-		updateSettingsProfileAfterLoggedIn(ctx, w, r, session, kratosRequestHeader, params)
+		updateSettingsProfileAfterLoggedIn(ctx, w, r, session, kratosRequestHeaderAfterLoggedIn, params)
 	} else if params.Method == "password" {
-		updateSettingsPasswordAfterLoggedIn(ctx, w, r, session, kratosRequestHeader, params)
+		updateSettingsPasswordAfterLoggedIn(ctx, w, r, session, kratosRequestHeaderAfterLoggedIn, params)
 	} else if params.Method == "totp" {
-		updateSettingsTotpAfterLoggedIn(ctx, w, r, session, kratosRequestHeader, params)
+		updateSettingsTotpAfterLoggedIn(ctx, w, r, session, kratosRequestHeaderAfterLoggedIn, params)
 	}
 }
 
-func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeaderAfterLoggedIn kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	slog.InfoContext(ctx, "updateSettingsProfileAfterLoggedIn", "params", params)
 
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -58,11 +57,20 @@ func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWrit
 	}))
 	loginCodeView := newView("auth/login/code.html")
 
+	getSettingsFlowResp, kratosRequestHeaderSettingsFlow, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+		FlowID: params.FlowID,
+		Header: kratosRequestHeaderAfterLoggedIn,
+	})
+	if err != nil {
+		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+
 	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratosRequestHeader,
+		Header: kratos.MergeHeaderForRequests(kratosRequestHeaderAfterLoggedIn, kratosRequestHeaderSettingsFlow),
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
 			Method:    "profile",
 			Traits:    params.Traits,
 		},
@@ -149,7 +157,7 @@ func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWrit
 	}).render(w, r, whoamiResp.Session)
 }
 
-func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeaderAfterLoggedIn kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	slog.InfoContext(ctx, "updateSettingsPasswordAfterLoggedIn", "params", params)
 
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -157,11 +165,20 @@ func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWri
 	}))
 	loginCodeView := newView("auth/login/code.html")
 
+	getSettingsFlowResp, kratosRequestHeaderSettingsFlow, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+		FlowID: params.FlowID,
+		Header: kratosRequestHeaderAfterLoggedIn,
+	})
+	if err != nil {
+		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+
 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratosRequestHeader,
+		Header: kratos.MergeHeaderForRequests(kratosRequestHeaderAfterLoggedIn, kratosRequestHeaderSettingsFlow),
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
 			Method:    "password",
 			Password:  params.Password,
 		},
@@ -191,7 +208,7 @@ func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWri
 	}).render(w, r, whoamiResp.Session)
 }
 
-func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeaderAfterLoggedIn kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	slog.InfoContext(ctx, "updateSettingsTotpAfterLoggedIn", "params", params)
 
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -199,11 +216,20 @@ func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter,
 	}))
 	loginCodeView := newView("auth/login/code.html")
 
+	getSettingsFlowResp, kratosRequestHeaderSettingsFlow, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+		FlowID: params.FlowID,
+		Header: kratosRequestHeaderAfterLoggedIn,
+	})
+	if err != nil {
+		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+
 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratosRequestHeader,
+		Header: kratos.MergeHeaderForRequests(kratosRequestHeaderAfterLoggedIn, kratosRequestHeaderSettingsFlow),
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
+			CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
 			Method:    "totp",
 			TotpCode:  params.TotpCode,
 		},

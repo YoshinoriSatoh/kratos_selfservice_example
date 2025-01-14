@@ -134,12 +134,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	// update settings(profile) flow after logged in
 	if reqParams.UpdateSettingsAfterLoggedIn != "" {
 		// update settings
-		updateSettingsAfterLoggedIn(ctx, w, r, session,
-			kratos.KratosRequestHeader{
-				Cookie:   mergeCookie(kratosRequestHeader.Cookie, kratosReqHeaderForNext.Cookie),
-				ClientIP: kratosRequestHeader.ClientIP,
-			},
-			updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
+		updateSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
 		return
 	}
 

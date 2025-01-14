@@ -46,7 +46,7 @@ func existSameCookie(respCookie []string, reqCookieName string) bool {
 	return false
 }
 
-func buildCookieForNext(respCookie []string, reqCookie []string) []string {
+func mergeCookie(respCookie []string, reqCookie []string) []string {
 	requestCookieForNext := respCookie
 	for _, reqc := range reqCookie {
 		reqCookieName := strings.Split(reqc, "=")[0]
@@ -60,12 +60,23 @@ func buildCookieForNext(respCookie []string, reqCookie []string) []string {
 	return requestCookieForNext
 }
 
+func MergeHeaderForRequestAndResponse(respHeader KratosResponseHeader, reqHeader KratosRequestHeader) KratosRequestHeader {
+	return KratosRequestHeader{
+		Cookie:   mergeCookie(respHeader.Cookie, reqHeader.Cookie),
+		ClientIP: reqHeader.ClientIP,
+	}
+}
+
+func MergeHeaderForRequests(baseHeader KratosRequestHeader, header KratosRequestHeader) KratosRequestHeader {
+	return KratosRequestHeader{
+		Cookie:   mergeCookie(baseHeader.Cookie, header.Cookie),
+		ClientIP: header.ClientIP,
+	}
+}
+
 func requestKratosPublic(ctx context.Context, i kratosRequest) (kratosResponse, KratosRequestHeader, error) {
 	resp, err := requestKratos(ctx, pkgVars.kratosPublicEndpoint, i)
-	reqHeader := i.Header
-	// reqHeader.Cookie = resp.Header.Cookie
-	reqHeader.Cookie = buildCookieForNext(resp.Header.Cookie, reqHeader.Cookie)
-	return resp, reqHeader, err
+	return resp, MergeHeaderForRequestAndResponse(resp.Header, i.Header), err
 }
 
 func requestKratosAdmin(ctx context.Context, i kratosRequest) (kratosResponse, error) {
@@ -189,11 +200,6 @@ func getKratosError(ctx context.Context, bodyBytes []byte, statusCode int) error
 		if err := json.Unmarshal(bodyBytes, &errGeneric); err != nil {
 			slog.ErrorContext(ctx, "getErrorFromOutput", "json unmarshal error", err)
 			return err
-		}
-
-		// aal2 required for session
-		if statusCode == http.StatusForbidden && errGeneric.Err.ID == "session_aal2_required" {
-
 		}
 
 		return errGeneric

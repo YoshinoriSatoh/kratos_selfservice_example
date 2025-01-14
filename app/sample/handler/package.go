@@ -2,9 +2,7 @@ package handler
 
 import (
 	"html/template"
-	"log/slog"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -90,29 +88,4 @@ func initValidator() {
 func validateDate(fl validator.FieldLevel) bool {
 	_, err := time.Parse("2006-01-02", fl.Field().String())
 	return err == nil
-}
-
-func existSameCookie(respCookie []string, reqCookieName string) bool {
-	for _, respc := range respCookie {
-		respCookieName := strings.Split(respc, "=")[0]
-		slog.Debug("buildCookieForNext", "respc", respc)
-		if respCookieName == reqCookieName {
-			return true
-		}
-	}
-	return false
-}
-
-func mergeCookie(respCookie []string, reqCookie []string) []string {
-	requestCookieForNext := respCookie
-	for _, reqc := range reqCookie {
-		reqCookieName := strings.Split(reqc, "=")[0]
-		slog.Debug("buildCookieForNext", "reqc", reqc)
-		if !existSameCookie(respCookie, reqCookieName) {
-			requestCookieForNext = append(requestCookieForNext, reqc)
-		}
-	}
-
-	slog.Debug("buildCookieForNext", "requestCookieForNext", requestCookieForNext)
-	return requestCookieForNext
 }

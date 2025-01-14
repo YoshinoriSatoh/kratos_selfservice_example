@@ -98,10 +98,12 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+
 	// update login flow
 	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 		Aal:    kratos.Aal1,
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:       "passkey",
@@ -127,20 +129,12 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 
 	// update settings(profile) flow after logged in
 	if reqParams.UpdateSettingsAfterLoggedIn != "" {
-		// create settings
-		createSettingsFlowResp, kratosReqHeaderForNext, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-			Header: kratosReqHeaderForNext,
-		})
-		if err != nil {
-			views.mfa.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
-		}
-
 		// update settings
 		updateSettingsAfterLoggedIn(ctx, w, r, session,
-			createSettingsFlowResp.SettingsFlow.FlowID,
-			createSettingsFlowResp.SettingsFlow.CsrfToken,
-			kratosReqHeaderForNext,
+			kratos.KratosRequestHeader{
+				Cookie:   mergeCookie(kratosRequestHeader.Cookie, kratosReqHeaderForNext.Cookie),
+				ClientIP: kratosRequestHeader.ClientIP,
+			},
 			updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
 		return
 	}

@@ -148,8 +148,10 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
 			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
-				Method: "profile",
-				Traits: makeTraitsForUpdateSettings(session, reqParams),
+				FlowID:    reqParams.FlowID,
+				CsrfToken: reqParams.CsrfToken,
+				Method:    "profile",
+				Traits:    makeTraitsForUpdateSettings(session, reqParams),
 			}
 
 			if kratos.SessionRequiredAal == kratos.Aal1 {

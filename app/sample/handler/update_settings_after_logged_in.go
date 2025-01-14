@@ -14,10 +14,12 @@ import (
 )
 
 type updateSettingsAfterLoggedInParams struct {
-	Method   string
-	Traits   kratos.Traits
-	Password string
-	TotpCode string
+	FlowID    string
+	CsrfToken string
+	Method    string
+	Traits    kratos.Traits
+	Password  string
+	TotpCode  string
 }
 
 func (p *updateSettingsAfterLoggedInParams) toString() string {
@@ -38,17 +40,17 @@ func updateSettingsAfterLoggedInParamsFromString(base64str string) updateSetting
 	return h
 }
 
-func updateSettingsAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, flowID string, csrfToken string, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	if params.Method == "profile" {
-		updateSettingsProfileAfterLoggedIn(ctx, w, r, session, flowID, csrfToken, kratosRequestHeader, params)
+		updateSettingsProfileAfterLoggedIn(ctx, w, r, session, kratosRequestHeader, params)
 	} else if params.Method == "password" {
-		updateSettingsPasswordAfterLoggedIn(ctx, w, r, session, flowID, csrfToken, kratosRequestHeader, params)
+		updateSettingsPasswordAfterLoggedIn(ctx, w, r, session, kratosRequestHeader, params)
 	} else if params.Method == "totp" {
-		updateSettingsTotpAfterLoggedIn(ctx, w, r, session, flowID, csrfToken, kratosRequestHeader, params)
+		updateSettingsTotpAfterLoggedIn(ctx, w, r, session, kratosRequestHeader, params)
 	}
 }
 
-func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, flowID string, csrfToken string, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	slog.InfoContext(ctx, "updateSettingsProfileAfterLoggedIn", "params", params)
 
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -57,10 +59,10 @@ func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWrit
 	loginCodeView := newView("auth/login/code.html")
 
 	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: flowID,
+		FlowID: params.FlowID,
 		Header: kratosRequestHeader,
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: csrfToken,
+			CsrfToken: params.CsrfToken,
 			Method:    "profile",
 			Traits:    params.Traits,
 		},
@@ -147,7 +149,7 @@ func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWrit
 	}).render(w, r, whoamiResp.Session)
 }
 
-func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, flowID string, csrfToken string, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	slog.InfoContext(ctx, "updateSettingsPasswordAfterLoggedIn", "params", params)
 
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -156,10 +158,10 @@ func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWri
 	loginCodeView := newView("auth/login/code.html")
 
 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: flowID,
+		FlowID: params.FlowID,
 		Header: kratosRequestHeader,
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: csrfToken,
+			CsrfToken: params.CsrfToken,
 			Method:    "password",
 			Password:  params.Password,
 		},
@@ -189,7 +191,7 @@ func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWri
 	}).render(w, r, whoamiResp.Session)
 }
 
-func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, flowID string, csrfToken string, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
+func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter, r *http.Request, session *kratos.Session, kratosRequestHeader kratos.KratosRequestHeader, params updateSettingsAfterLoggedInParams) {
 	slog.InfoContext(ctx, "updateSettingsTotpAfterLoggedIn", "params", params)
 
 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -198,10 +200,10 @@ func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter,
 	loginCodeView := newView("auth/login/code.html")
 
 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: flowID,
+		FlowID: params.FlowID,
 		Header: kratosRequestHeader,
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: csrfToken,
+			CsrfToken: params.CsrfToken,
 			Method:    "totp",
 			TotpCode:  params.TotpCode,
 		},

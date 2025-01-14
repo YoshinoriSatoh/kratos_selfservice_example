@@ -96,10 +96,12 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+
 	// update login flow
 	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 		Aal:    kratos.Aal2,
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:     "code",
@@ -122,22 +124,12 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 	slog.DebugContext(ctx, "handlePostAuthLoginCode", "reqParams", reqParams)
 	// update settings(profile) flow after logged in
 	if reqParams.UpdateSettingsAfterLoggedIn != "" {
-		// create settings
-		createSettingsFlowResp, kratosReqHeaderForNext, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-			Header: kratosReqHeaderForNext,
-		})
-		if err != nil {
-			views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
-		}
-
-		slog.Debug("handlePostAuthLoginCode", "kratosReqHeaderForNext", kratosReqHeaderForNext, "createSettingsFlowResp", createSettingsFlowResp)
-
 		// update settings
 		updateSettingsAfterLoggedIn(ctx, w, r, session,
-			createSettingsFlowResp.SettingsFlow.FlowID,
-			createSettingsFlowResp.SettingsFlow.CsrfToken,
-			kratosReqHeaderForNext,
+			kratos.KratosRequestHeader{
+				Cookie:   mergeCookie(kratosRequestHeader.Cookie, kratosReqHeaderForNext.Cookie),
+				ClientIP: kratosRequestHeader.ClientIP,
+			},
 			updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
 		return
 	}

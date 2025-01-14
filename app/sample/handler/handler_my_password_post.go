@@ -120,8 +120,10 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
 			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
-				Method:   "password",
-				Password: reqParams.Password,
+				FlowID:    reqParams.FlowID,
+				CsrfToken: reqParams.CsrfToken,
+				Method:    "password",
+				Password:  reqParams.Password,
 			}
 
 			if kratos.SessionRequiredAal == kratos.Aal1 {

@@ -88,10 +88,6 @@ func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (Get
 		Query:  map[string]string{"id": r.FlowID},
 		Header: r.Header,
 	})
-	if err != nil {
-		slog.ErrorContext(ctx, "GetRegistrationFlow", "requestKratosPublic error", err)
-		return GetRegistrationFlowResponse{}, kratosReqHeaderForNext, err
-	}
 
 	// Parse response body
 	var kratosRespBody kratosGetRegisrationFlowRespnseBody
@@ -109,6 +105,11 @@ func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (Get
 			oidcProvider = OidcProviderGithub
 		}
 	}
+	if err != nil && !oidcProvider.Provided() {
+		slog.ErrorContext(ctx, "GetRegistrationFlow", "requestKratosPublic error", err)
+		return GetRegistrationFlowResponse{}, kratosReqHeaderForNext, err
+	}
+
 	response := GetRegistrationFlowResponse{
 		Header: kratosResp.Header,
 		RegistrationFlow: RegistrationFlow{

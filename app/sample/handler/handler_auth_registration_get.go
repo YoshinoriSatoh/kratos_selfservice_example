@@ -98,10 +98,12 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 	// create or get registration Flow
 	registrationFlow, kratosRespHeader, kratosReqHeaderForNext, err := kratos.KratosCreateOrGetRegistrationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
 	if err != nil {
+		slog.Debug("handleGetAuthRegistration", "KratosCreateOrGetRegistrationFlow err", err)
 		views.profile.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
+	slog.Debug("handleGetAuthRegistration", "registrationFlow", registrationFlow)
 	// Update identity when user already registered with the same credential of provided the oidc provider.
 	if registrationFlow.OidcProvider.Provided() {
 		kratosUpdateRegistrationFlowResp, _, err := kratos.KratosLinkIdentityIfExists(ctx, kratos.KratosLinkIdentityIfExistsRequest{

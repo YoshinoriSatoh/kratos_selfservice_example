@@ -14,8 +14,9 @@ import (
 )
 
 type showSettingsAfterLoggedInParams struct {
-	FlowID string
-	Method string
+	FlowID    string
+	CsrfToken string
+	Method    string
 }
 
 func (p *showSettingsAfterLoggedInParams) toString() string {

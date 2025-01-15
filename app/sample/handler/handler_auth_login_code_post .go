@@ -20,6 +20,7 @@ type postAuthLoginCodeRequestParams struct {
 	Identifier                  string `validate:"required,email" ja:"メールアドレス"`
 	Code                        string `validate:"required" ja:"認証コード"`
 	UpdateSettingsAfterLoggedIn string
+	ShowSettingsAfterLoggedIn   string
 }
 
 // Extract parameters from http request
@@ -30,6 +31,7 @@ func newPostAuthLoginCodeRequestParams(r *http.Request) *postAuthLoginCodeReques
 		Identifier:                  r.PostFormValue("identifier"),
 		Code:                        r.PostFormValue("code"),
 		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
+		ShowSettingsAfterLoggedIn:   r.PostFormValue("show_settings_after_logged_in"),
 	}
 }
 
@@ -41,6 +43,7 @@ func (p *postAuthLoginCodeRequestParams) toViewParams() map[string]any {
 		"Identifier":                  p.Identifier,
 		"Code":                        p.Code,
 		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
+		"ShowSettingsAfterLoggedIn":   p.ShowSettingsAfterLoggedIn,
 	}
 }
 
@@ -122,9 +125,14 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 	slog.Debug("handlePostAuthLoginCode", "kratosReqHeaderForNext", kratosReqHeaderForNext, "updateLoginFlowResp", updateLoginFlowResp)
 
 	slog.DebugContext(ctx, "handlePostAuthLoginCode", "reqParams", reqParams)
-	// update settings(profile) flow after logged in
+	// update settings flow after logged in
 	if reqParams.UpdateSettingsAfterLoggedIn != "" {
 		updateSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
+		return
+	}
+	// show settings(password) after logged in
+	if reqParams.ShowSettingsAfterLoggedIn != "" {
+		showSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, showSettingsAfterLoggedInParamsFromString(reqParams.ShowSettingsAfterLoggedIn))
 		return
 	}
 

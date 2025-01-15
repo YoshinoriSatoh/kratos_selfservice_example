@@ -159,14 +159,8 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 
 				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 					FlowID: createLoginFlowResp.LoginFlow.FlowID,
-					Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
-						Cookie: []string{
-							kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
-							kratos.ExtractKratosSessionCookie(kratosRequestHeader),
-						},
-						ClientIP: kratosRequestHeader.ClientIP,
-					},
-					Aal: kratos.Aal2,
+					Header: kratosRequestHeader,
+					Aal:    kratos.Aal2,
 					Body: kratos.UpdateLoginFlowRequestBody{
 						Method:     "code",
 						CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,

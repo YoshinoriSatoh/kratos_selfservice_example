@@ -123,6 +123,7 @@ func prepareGetMyProfilePost(w http.ResponseWriter, r *http.Request) (*postMyPro
 func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
 	// collect rendering data and validate request parameters.
 	reqParams, views, baseViewError, err := prepareGetMyProfilePost(w, r)
@@ -134,7 +135,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	// update settings flow
 	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: reqParams.FlowID,
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 		Body: kratos.UpdateSettingsFlowRequestBody{
 			CsrfToken: reqParams.CsrfToken,
 			Method:    "profile",
@@ -148,15 +149,16 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
 			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
-				FlowID: reqParams.FlowID,
-				Method: "profile",
-				Traits: makeTraitsForUpdateSettings(session, reqParams),
+				FlowID:    reqParams.FlowID,
+				CsrfToken: reqParams.CsrfToken,
+				Method:    "profile",
+				Traits:    makeTraitsForUpdateSettings(session, reqParams),
 			}
 
 			if kratos.SessionRequiredAal == kratos.Aal1 {
 				// create login flow
 				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-					Header:  makeDefaultKratosRequestHeader(r),
+					Header:  kratosRequestHeader,
 					Refresh: true,
 					Aal:     kratos.Aal1,
 				})
@@ -177,8 +179,8 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 
 			} else if kratos.SessionRequiredAal == kratos.Aal2 {
 				// create and update login flow for aal2, send authentication code
-				createLoginFlowResp, kratosReqHeaderForNext, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-					Header:  makeDefaultKratosRequestHeader(r),
+				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+					Header:  kratosRequestHeader,
 					Aal:     kratos.Aal2,
 					Refresh: true,
 				})
@@ -191,7 +193,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				// update login flow for aal2, send authentication code
 				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 					FlowID: createLoginFlowResp.LoginFlow.FlowID,
-					Header: kratosReqHeaderForNext,
+					Header: kratosRequestHeader,
 					Aal:    kratos.Aal2,
 					Body: kratos.UpdateLoginFlowRequestBody{
 						Method:     "code",

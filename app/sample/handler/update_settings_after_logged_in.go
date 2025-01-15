@@ -14,11 +14,13 @@ import (
 )
 
 type updateSettingsAfterLoggedInParams struct {
-	FlowID   string
-	Method   string
-	Traits   kratos.Traits
-	Password string
-	TotpCode string
+	FlowID     string
+	CsrfToken  string
+	Method     string
+	Traits     kratos.Traits
+	Password   string
+	TotpCode   string
+	TotpUnlink string
 }
 
 func (p *updateSettingsAfterLoggedInParams) toString() string {
@@ -57,20 +59,19 @@ func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWrit
 	}))
 	loginCodeView := newView("auth/login/code.html")
 
-	getSettingsFlowResp, kratosRequestHeaderSettingsFlow, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-		FlowID: params.FlowID,
-		Header: kratosRequestHeaderAfterLoggedIn,
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
 	kratosResp, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratos.MergeHeaderForRequests(kratosRequestHeaderAfterLoggedIn, kratosRequestHeaderSettingsFlow),
+		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
+			Cookie: []string{
+				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
+				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
+			},
+			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
+		},
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
+			CsrfToken: params.CsrfToken,
 			Method:    "profile",
 			Traits:    params.Traits,
 		},
@@ -96,7 +97,7 @@ func updateSettingsProfileAfterLoggedIn(ctx context.Context, w http.ResponseWrit
 		})
 
 		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-			Header: makeDefaultKratosRequestHeader(r),
+			Header: kratosRequestHeader,
 		})
 		if err != nil {
 			loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
@@ -165,20 +166,19 @@ func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWri
 	}))
 	loginCodeView := newView("auth/login/code.html")
 
-	getSettingsFlowResp, kratosRequestHeaderSettingsFlow, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-		FlowID: params.FlowID,
-		Header: kratosRequestHeaderAfterLoggedIn,
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratos.MergeHeaderForRequests(kratosRequestHeaderAfterLoggedIn, kratosRequestHeaderSettingsFlow),
+		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
+			Cookie: []string{
+				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
+				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
+			},
+			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
+		},
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
+			CsrfToken: params.CsrfToken,
 			Method:    "password",
 			Password:  params.Password,
 		},
@@ -193,7 +193,7 @@ func updateSettingsPasswordAfterLoggedIn(ctx context.Context, w http.ResponseWri
 	})
 
 	createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 	})
 	if err != nil {
 		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
@@ -216,22 +216,22 @@ func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter,
 	}))
 	loginCodeView := newView("auth/login/code.html")
 
-	getSettingsFlowResp, kratosRequestHeaderSettingsFlow, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-		FlowID: params.FlowID,
-		Header: kratosRequestHeaderAfterLoggedIn,
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
+	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
 		FlowID: params.FlowID,
-		Header: kratos.MergeHeaderForRequests(kratosRequestHeaderAfterLoggedIn, kratosRequestHeaderSettingsFlow),
+		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
+			Cookie: []string{
+				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
+				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
+			},
+			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
+		},
 		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
-			Method:    "totp",
-			TotpCode:  params.TotpCode,
+			CsrfToken:  params.CsrfToken,
+			Method:     "totp",
+			TotpCode:   params.TotpCode,
+			TotpUnlink: params.TotpUnlink,
 		},
 	})
 	if err != nil {
@@ -243,7 +243,7 @@ func updateSettingsTotpAfterLoggedIn(ctx context.Context, w http.ResponseWriter,
 	})
 
 	createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-		Header: makeDefaultKratosRequestHeader(r),
+		Header: kratosRequestHeader,
 	})
 	if err != nil {
 		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)

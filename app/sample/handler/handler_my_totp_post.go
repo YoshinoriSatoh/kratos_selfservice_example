@@ -69,7 +69,7 @@ func prepareGetMyTotpPost(w http.ResponseWriter, r *http.Request) (*postMyTotpRe
 	}))
 	reqParams := newMyTotpRequestParams(r)
 	views := getMyTotpPostViews{
-		totpForm:   newView("my/profile/_totp_form.html").addParams(reqParams.toViewParams()),
+		totpForm:   newView("my/_totp_form.html").addParams(reqParams.toViewParams()),
 		loginIndex: newView("auth/login/index.html").addParams(reqParams.toViewParams()),
 		loginCode:  newView("auth/login/code.html").addParams(reqParams.toViewParams()),
 	}
@@ -114,9 +114,11 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		var errGeneric kratos.ErrorGeneric
 		if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_refresh_required" {
 			afterLoggedInParams := &updateSettingsAfterLoggedInParams{
-				FlowID:   reqParams.FlowID,
-				Method:   "totp",
-				TotpCode: reqParams.TotpCode,
+				FlowID:     reqParams.FlowID,
+				CsrfToken:  reqParams.CsrfToken,
+				Method:     "totp",
+				TotpCode:   reqParams.TotpCode,
+				TotpUnlink: reqParams.TotpUnlink,
 			}
 
 			if kratos.SessionRequiredAal == kratos.Aal1 {
@@ -144,7 +146,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 
 			} else if kratos.SessionRequiredAal == kratos.Aal2 {
 				// create and update login flow for aal2, send authentication code
-				createLoginFlowResp, kratosReqHeaderForNext, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 					Header:  kratosRequestHeader,
 					Aal:     kratos.Aal2,
 					Refresh: true,
@@ -157,8 +159,14 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 
 				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 					FlowID: createLoginFlowResp.LoginFlow.FlowID,
-					Header: kratosReqHeaderForNext,
-					Aal:    kratos.Aal2,
+					Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
+						Cookie: []string{
+							kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
+							kratos.ExtractKratosSessionCookie(kratosRequestHeader),
+						},
+						ClientIP: kratosRequestHeader.ClientIP,
+					},
+					Aal: kratos.Aal2,
 					Body: kratos.UpdateLoginFlowRequestBody{
 						Method:     "code",
 						CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,
@@ -191,10 +199,11 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// update session
-	whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
+	whoamiResp, whoamiReqheader := kratos.Whoami(ctx, kratos.WhoamiRequest{
 		Header: kratosReqHeaderForNext,
 	})
 	session = whoamiResp.Session
+	slog.DebugContext(ctx, "handlePostMyTotp", "whoamiResp", whoamiResp, "whoamiReqheader", whoamiReqheader)
 
 	// create or get settings Flow
 	createSettingsTotpResp, kratosReqHeader, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
@@ -204,7 +213,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	slog.DebugContext(ctx, "handlePostMyTotp", "createSettingsTotpResp", createSettingsTotpResp)
+	slog.DebugContext(ctx, "handlePostMyTotp", "createSettingsTotpResp", createSettingsTotpResp, "kratosReqHeader", kratosReqHeader)
 
 	// render top page
 	addCookies(w, kratosReqHeader.Cookie)

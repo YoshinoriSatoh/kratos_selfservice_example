@@ -1243,7 +1243,7 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 		}
 	} else if r.Body.Method == "totp" {
 		if r.Body.TotpCode == "" && r.Body.TotpUnlink == "false" {
-			return UpdateSettingsFlowResponse{}, r.Header, errors.New("missing password in body")
+			return UpdateSettingsFlowResponse{}, r.Header, errors.New("missing totp_code in body")
 		}
 	} else {
 		slog.ErrorContext(ctx, "UpdateSettingsFlow", "Method", r.Body.Method)
@@ -1283,7 +1283,7 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 		return response, kratosReqHeaderForNext, err
 	}
 
-	slog.DebugContext(ctx, "UpdateSettingsFlow", "kratosReqBody", string(kratosInputBytes), "kratosRespBody", string(kratosResp.BodyBytes), "err", err)
+	slog.DebugContext(ctx, "UpdateSettingsFlow", "kratosReqBody", string(kratosInputBytes), "err", err)
 
 	// Create response
 	for _, c := range kratosRespBody.ContinueWith {

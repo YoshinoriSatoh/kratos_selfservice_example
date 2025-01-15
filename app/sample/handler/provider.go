@@ -142,11 +142,9 @@ func (p *Provider) fetchSession(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, ctxRemoteAddr{}, r.RemoteAddr)
 		ctx = context.WithValue(ctx, ctxCookie{}, r.Header.Get("Cookie"))
 
-		slog.DebugContext(ctx, "fetchSession", "cookies", r.Cookies())
 		whoamiResp, err := kratos.Whoami(ctx, kratos.WhoamiRequest{
 			Header: makeDefaultKratosRequestHeader(r),
 		})
-		slog.DebugContext(ctx, "fetchSession", "cookies", r.Cookies())
 
 		if kratos.SessionRequiredAal == kratos.Aal2 && err != nil && err.(kratos.ErrorGeneric).Err.ID == "session_aal2_required" &&
 			r.URL.Path != "/auth/login/code" && r.URL.Path != "/auth/login/totp" && r.Method != "POST" {

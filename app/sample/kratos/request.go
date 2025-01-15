@@ -35,48 +35,32 @@ type kratosResponse struct {
 	Header     KratosResponseHeader
 }
 
-func existSameCookie(respCookie []string, reqCookieName string) bool {
-	for _, respc := range respCookie {
-		respCookieName := strings.Split(respc, "=")[0]
-		slog.Debug("buildCookieForNext", "respc", respc)
-		if respCookieName == reqCookieName {
-			return true
+func ExtractCsrfTokenCookie(r KratosRequestHeader) string {
+	slog.Debug("ExtractCsrfTokenCookie", "r", r)
+	for _, c := range r.Cookie {
+		slog.Debug("ExtractCsrfTokenCookie", "c", c)
+		if strings.HasPrefix(strings.Split(c, "=")[0], "csrf_token") {
+			return c
 		}
 	}
-	return false
+	return ""
 }
 
-func mergeCookie(respCookie []string, reqCookie []string) []string {
-	requestCookieForNext := respCookie
-	for _, reqc := range reqCookie {
-		reqCookieName := strings.Split(reqc, "=")[0]
-		slog.Debug("buildCookieForNext", "reqc", reqc)
-		if !existSameCookie(respCookie, reqCookieName) {
-			requestCookieForNext = append(requestCookieForNext, reqc)
+func ExtractKratosSessionCookie(r KratosRequestHeader) string {
+	for _, c := range r.Cookie {
+		if strings.HasPrefix(strings.Split(c, "=")[0], "kratos_session") {
+			return c
 		}
 	}
-
-	slog.Debug("buildCookieForNext", "requestCookieForNext", requestCookieForNext)
-	return requestCookieForNext
-}
-
-func MergeHeaderForRequestAndResponse(respHeader KratosResponseHeader, reqHeader KratosRequestHeader) KratosRequestHeader {
-	return KratosRequestHeader{
-		Cookie:   mergeCookie(respHeader.Cookie, reqHeader.Cookie),
-		ClientIP: reqHeader.ClientIP,
-	}
-}
-
-func MergeHeaderForRequests(baseHeader KratosRequestHeader, header KratosRequestHeader) KratosRequestHeader {
-	return KratosRequestHeader{
-		Cookie:   mergeCookie(baseHeader.Cookie, header.Cookie),
-		ClientIP: header.ClientIP,
-	}
+	return ""
 }
 
 func requestKratosPublic(ctx context.Context, i kratosRequest) (kratosResponse, KratosRequestHeader, error) {
 	resp, err := requestKratos(ctx, pkgVars.kratosPublicEndpoint, i)
-	return resp, MergeHeaderForRequestAndResponse(resp.Header, i.Header), err
+	return resp, KratosRequestHeader{
+		Cookie:   resp.Header.Cookie,
+		ClientIP: i.Header.ClientIP,
+	}, err
 }
 
 func requestKratosAdmin(ctx context.Context, i kratosRequest) (kratosResponse, error) {
@@ -115,7 +99,7 @@ func requestKratos(ctx context.Context, endpoint string, i kratosRequest) (krato
 	}
 
 	if i.Path != "/sessions/whoami" {
-		slog.InfoContext(ctx, "requestKratos", "request", req)
+		slog.InfoContext(ctx, "requestKratos", "request", req, "body", string(i.BodyBytes))
 	}
 
 	client := new(http.Client)

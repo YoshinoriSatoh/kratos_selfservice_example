@@ -492,7 +492,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	if updateLoginFlowResp.RedirectBrowserTo != "" {
 		slog.DebugContext(ctx, "redirect occured", "RedirectBrowserTo", updateLoginFlowResp.RedirectBrowserTo)
 		// w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
-		redirect(w, r, updateLoginFlowResp.RedirectBrowserTo)
+		redirect(w, r, updateLoginFlowResp.RedirectBrowserTo, map[string]string{})
 		return
 	}
 
@@ -728,15 +728,22 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 
 	// view passkey settings page when updated settings after logged in.
 	if reqParams.UpdateSettingsRequest != "" {
-		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-			Header: kratosReqHeaderForNext,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "create settings flow error", "err", err)
-			views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
+		if updateLoginFlowResp.SettingsUpdatedMethod == "profile" {
+			setHeadersForReplaceBody(w, "/my/profile")
+			redirect(w, r, "/my/profile", map[string]string{
+				"information": "プロフィールが更新されました。",
+			})
+		} else if updateLoginFlowResp.SettingsUpdatedMethod == "password" {
+			setHeadersForReplaceBody(w, "/my/password")
+			redirect(w, r, "/my/password", map[string]string{
+				"information": "パスワードが設定されました。",
+			})
+		} else if updateLoginFlowResp.SettingsUpdatedMethod == "totp" {
+			setHeadersForReplaceBody(w, "/my/totp")
+			redirect(w, r, "/my/totp", map[string]string{
+				"information": "認証アプリが設定されました。",
+			})
 		}
-		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
 		return
 	}
 

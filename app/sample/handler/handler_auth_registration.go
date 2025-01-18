@@ -122,7 +122,7 @@ func (p *Provider) handleGetAuthRegistration(w http.ResponseWriter, r *http.Requ
 			addCookies(w, kratosUpdateRegistrationFlowResp.Header.Cookie)
 			if kratosUpdateRegistrationFlowResp.RedirectBrowserTo != "" {
 				// w.Header().Set("HX-Redirect", kratosResp.RedirectBrowserTo)
-				redirect(w, r, kratosUpdateRegistrationFlowResp.RedirectBrowserTo)
+				redirect(w, r, kratosUpdateRegistrationFlowResp.RedirectBrowserTo, map[string]string{})
 				return
 			}
 		}
@@ -403,7 +403,7 @@ func (p *Provider) handlePostAuthRegistrationCredentialPasskey(w http.ResponseWr
 	}
 
 	if updateRegistrationFlowResp.RedirectBrowserTo != "" {
-		redirect(w, r, updateRegistrationFlowResp.RedirectBrowserTo)
+		redirect(w, r, updateRegistrationFlowResp.RedirectBrowserTo, map[string]string{})
 		w.WriteHeader(http.StatusOK)
 	}
 
@@ -575,7 +575,7 @@ func (p *Provider) handlePostAuthRegistrationCredentialOidc(w http.ResponseWrite
 
 	addCookies(w, kratosResp.Header.Cookie)
 	if kratosResp.RedirectBrowserTo != "" {
-		redirect(w, r, kratosResp.RedirectBrowserTo)
+		redirect(w, r, kratosResp.RedirectBrowserTo, map[string]string{})
 	}
 }
 

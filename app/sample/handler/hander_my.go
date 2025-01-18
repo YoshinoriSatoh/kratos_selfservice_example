@@ -86,6 +86,7 @@ func (p *Provider) handleGetMy(w http.ResponseWriter, r *http.Request) {
 // --------------------------------------------------------------------------
 type getMyProfileRequestParams struct {
 	FlowID         string `validate:"omitempty,uuid4"`
+	Information    string
 	SavedEmail     string
 	SavedFirstname string
 	SavedLastname  string
@@ -97,6 +98,7 @@ type getMyProfileRequestParams struct {
 func newGetMyProfileRequestParams(r *http.Request) *getMyProfileRequestParams {
 	return &getMyProfileRequestParams{
 		FlowID:         r.URL.Query().Get("flow"),
+		Information:    r.URL.Query().Get("information"),
 		SavedEmail:     r.URL.Query().Get("email"),
 		SavedFirstname: r.URL.Query().Get("firstname"),
 		SavedLastname:  r.URL.Query().Get("lastname"),
@@ -206,6 +208,7 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	views.profile.addParams(map[string]any{
 		"SettingsFlowID": settingsFlow.FlowID,
 		"CsrfToken":      settingsFlow.CsrfToken,
+		"Information":    reqParams.Information,
 		"Email":          email,
 		"Firstname":      firstname,
 		"Lastname":       lastname,

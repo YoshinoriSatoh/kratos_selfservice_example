@@ -797,8 +797,8 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 	}
 
 	if r.UpdateSettingsRequest != "" {
-		params := updateSettingsAfterLoggedInParamsFromString(r.UpdateSettingsRequest)
-		kratosRequestHeader := KratosRequestHeader{
+		updateSettingsFlowRequest := updateSettingsRequestFromString(r.UpdateSettingsRequest)
+		updateSettingsFlowRequest.Header = KratosRequestHeader{
 			Cookie: []string{
 				ExtractCsrfTokenCookie(r.Header),
 				ExtractKratosSessionCookie(kratosReqHeaderForNext),
@@ -806,15 +806,7 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 			ClientIP: kratosReqHeaderForNext.ClientIP,
 		}
 
-		kratosResp, kratosReqHeaderForNext, err := UpdateSettingsFlow(ctx, UpdateSettingsFlowRequest{
-			FlowID: params.FlowID,
-			Header: kratosRequestHeader,
-			Body: UpdateSettingsFlowRequestBody{
-				CsrfToken: params.CsrfToken,
-				Method:    params.Method,
-				Traits:    params.Traits,
-			},
-		})
+		kratosResp, kratosReqHeaderForNext, err := UpdateSettingsFlow(ctx, updateSettingsFlowRequest)
 		if err != nil {
 			slog.ErrorContext(ctx, "UpdateLoginFlow updateSettingsAfterLoggedIn error", "err", err)
 			return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
@@ -824,7 +816,7 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 			Header:                 kratosResp.Header,
 			Session:                kratosRespBody.Session,
 			RequiredAal2:           SessionRequiredAal == Aal2,
-			SettingsUpdatedMethod:  params.Method,
+			SettingsUpdatedMethod:  updateSettingsFlowRequest.Body.Method,
 			VerificationFlow:       kratosResp.VerificationFlow,
 			VerificationFlowCookie: kratosResp.VerificationFlowCookie,
 		}, kratosReqHeaderForNext, err
@@ -1338,6 +1330,16 @@ func (p *UpdateSettingsFlowRequest) ToString() string {
 	return base64.URLEncoding.EncodeToString(jsonStr)
 }
 
+func updateSettingsRequestFromString(base64str string) UpdateSettingsFlowRequest {
+	var h UpdateSettingsFlowRequest
+	jsonStr, err := base64.URLEncoding.DecodeString(base64str)
+	if err != nil {
+		slog.Error("updateSettingsRequestFromString", "json Marshal error", err)
+	}
+	json.Unmarshal([]byte(jsonStr), &h)
+	return h
+}
+
 type UpdateSettingsFlowResponse struct {
 	Header                 KratosResponseHeader
 	SettingsFlow           *SettingsFlow
@@ -1491,35 +1493,35 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 // 		"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
 // 	}).render(w, r, session)
 
+// // }
+
+// type updateSettingsAfterLoggedInParams struct {
+// 	FlowID     string
+// 	CsrfToken  string
+// 	Method     string
+// 	Traits     Traits
+// 	Password   string
+// 	TotpCode   string
+// 	TotpUnlink string
 // }
 
-type updateSettingsAfterLoggedInParams struct {
-	FlowID     string
-	CsrfToken  string
-	Method     string
-	Traits     Traits
-	Password   string
-	TotpCode   string
-	TotpUnlink string
-}
+// func (p *updateSettingsAfterLoggedInParams) toString() string {
+// 	jsonStr, err := json.Marshal(*p)
+// 	if err != nil {
+// 		slog.Error("updateSettingsAfterLoggedInParams.toString", "json Marshal error", err)
+// 	}
+// 	return base64.URLEncoding.EncodeToString(jsonStr)
+// }
 
-func (p *updateSettingsAfterLoggedInParams) toString() string {
-	jsonStr, err := json.Marshal(*p)
-	if err != nil {
-		slog.Error("updateSettingsAfterLoggedInParams.toString", "json Marshal error", err)
-	}
-	return base64.URLEncoding.EncodeToString(jsonStr)
-}
-
-func updateSettingsAfterLoggedInParamsFromString(base64str string) updateSettingsAfterLoggedInParams {
-	var h updateSettingsAfterLoggedInParams
-	jsonStr, err := base64.URLEncoding.DecodeString(base64str)
-	if err != nil {
-		slog.Error("updateSettingsAfterLoggedInParamsFromString", "json Marshal error", err)
-	}
-	json.Unmarshal([]byte(jsonStr), &h)
-	return h
-}
+// func updateSettingsAfterLoggedInParamsFromString(base64str string) updateSettingsAfterLoggedInParams {
+// 	var h updateSettingsAfterLoggedInParams
+// 	jsonStr, err := base64.URLEncoding.DecodeString(base64str)
+// 	if err != nil {
+// 		slog.Error("updateSettingsAfterLoggedInParamsFromString", "json Marshal error", err)
+// 	}
+// 	json.Unmarshal([]byte(jsonStr), &h)
+// 	return h
+// }
 
 // func updateSettingsProfileAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
 // 	slog.InfoContext(ctx, "updateSettingsProfileAfterLoggedIn", "params", params)

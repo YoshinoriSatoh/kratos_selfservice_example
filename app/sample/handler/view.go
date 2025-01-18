@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -275,7 +276,14 @@ func newErrorMsg(message string) msg {
 	}
 }
 
-func redirect(w http.ResponseWriter, r *http.Request, redirectTo string) {
+func redirect(w http.ResponseWriter, r *http.Request, redirectTo string, query map[string]string) {
+	if len(query) > 0 {
+		q := make(url.Values)
+		for k, v := range query {
+			q.Add(k, v)
+		}
+		redirectTo = fmt.Sprintf("%s?%s", redirectTo, q.Encode())
+	}
 	if r.Header.Get("HX-Request") == "true" {
 		slog.Info("HX-Redirect")
 		w.Header().Set("HX-Redirect", redirectTo)

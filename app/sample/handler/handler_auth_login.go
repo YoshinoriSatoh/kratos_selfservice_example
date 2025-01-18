@@ -115,21 +115,21 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLoginPassword
 type postAuthLoginPasswordRequestParams struct {
-	FlowID                      string `validate:"uuid4"`
-	CsrfToken                   string `validate:"required"`
-	Identifier                  string `validate:"required,email" ja:"メールアドレス"`
-	Password                    string `validate:"required" ja:"パスワード"`
-	UpdateSettingsAfterLoggedIn string
+	FlowID                string `validate:"uuid4"`
+	CsrfToken             string `validate:"required"`
+	Identifier            string `validate:"required,email" ja:"メールアドレス"`
+	Password              string `validate:"required" ja:"パスワード"`
+	UpdateSettingsRequest string
 }
 
 // Return parameters that can refer in view template
 func (p *postAuthLoginPasswordRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID":                 p.FlowID,
-		"CsrfToken":                   p.CsrfToken,
-		"Identifier":                  p.Identifier,
-		"Password":                    p.Password,
-		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
+		"LoginFlowID":           p.FlowID,
+		"CsrfToken":             p.CsrfToken,
+		"Identifier":            p.Identifier,
+		"Password":              p.Password,
+		"UpdateSettingsRequest": p.UpdateSettingsRequest,
 	}
 }
 
@@ -150,11 +150,11 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 
 	// get request parameters
 	reqParams := &postAuthLoginPasswordRequestParams{
-		FlowID:                      r.URL.Query().Get("flow"),
-		CsrfToken:                   r.PostFormValue("csrf_token"),
-		Identifier:                  r.PostFormValue("identifier"),
-		Password:                    r.PostFormValue("password"),
-		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
+		FlowID:                r.URL.Query().Get("flow"),
+		CsrfToken:             r.PostFormValue("csrf_token"),
+		Identifier:            r.PostFormValue("identifier"),
+		Password:              r.PostFormValue("password"),
+		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
 
 	// prepare views
@@ -171,7 +171,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	}
 
 	// update login flow
-	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal1,
@@ -181,7 +181,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 			Identifier: reqParams.Identifier,
 			Password:   reqParams.Password,
 		},
-		UpdateSettingsAfterLoggedIn: reqParams.UpdateSettingsAfterLoggedIn,
+		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
@@ -193,59 +193,46 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	session = &updateLoginFlowResp.Session
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 
+	// view profile page when updated settings after logged in. if required validation of email, view verification page with rendered profile page.
+	if reqParams.UpdateSettingsRequest != "" {
+		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create settings flow error", "err", err)
+			passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+
+		settingsView := settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow)
+		if updateLoginFlowResp.VerificationFlow != nil {
+			// render verification code page (replace <body> tag and push url)
+			addCookies(w, updateLoginFlowResp.VerificationFlowCookie)
+			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", updateLoginFlowResp.VerificationFlow.FlowID))
+			newView("auth/verification/code.html").addParams(map[string]any{
+				"VerificationFlowID": updateLoginFlowResp.VerificationFlow.FlowID,
+				"CsrfToken":          updateLoginFlowResp.VerificationFlow.CsrfToken,
+				"IsUsedFlow":         updateLoginFlowResp.VerificationFlow.IsUsedFlow(),
+				"Render":             settingsView.toQueryParam(),
+			}).render(w, r, session)
+		} else {
+			settingsView.render(w, r, session)
+		}
+		return
+	}
+
 	// view authentication code input page for aal2 (MFA)
 	if updateLoginFlowResp.RequiredAal2 {
 		setHeadersForReplaceBody(w, "/auth/login/mfa")
 		newView("auth/login/mfa.html").addParams(reqParams.toViewParams()).render(w, r, session)
-
-	} else if updateLoginFlowResp.RequiredVerification != nil {
-		year, month, day := parseDate(session.Identity.Traits.Birthdate)
-		myProfileIndexView := newView("my/profile.html").addParams(map[string]any{
-			"SettingsFlowID": updateLoginFlowResp.RequiredVerification.SettingsFlow.FlowID,
-			"CsrfToken":      updateLoginFlowResp.RequiredVerification.SettingsFlow.CsrfToken,
-			"Email":          session.Identity.Traits.Email,
-			"Firstname":      session.Identity.Traits.Firstname,
-			"Lastname":       session.Identity.Traits.Lastname,
-			"Nickname":       session.Identity.Traits.Nickname,
-			"BirthdateYear":  year,
-			"BirthdateMonth": month,
-			"BirthdateDay":   day,
-			"Information":    "プロフィールが更新されました。",
-		})
-
-		// render verification code page (replace <body> tag and push url)
-		addCookies(w, updateLoginFlowResp.RequiredVerification.ResponseHeader.Cookie)
-		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", updateLoginFlowResp.RequiredVerification.VerificationFlow.FlowID))
-		newView("auth/verification/code.html").addParams(map[string]any{
-			"VerificationFlowID": updateLoginFlowResp.RequiredVerification.VerificationFlow.FlowID,
-			"CsrfToken":          updateLoginFlowResp.RequiredVerification.VerificationFlow.CsrfToken,
-			"IsUsedFlow":         updateLoginFlowResp.RequiredVerification.VerificationFlow.IsUsedFlow(),
-			"Render":             myProfileIndexView.toQueryParam(),
-		}).render(w, r, session)
-
-	} else if updateLoginFlowResp.NewSettings != nil {
-		year, month, day := parseDate(session.Identity.Traits.Birthdate)
-		addCookies(w, updateLoginFlowResp.NewSettings.ResponseHeader.Cookie)
-		setHeadersForReplaceBody(w, "/my/profile")
-		newView("my/profile.html").addParams(map[string]any{
-			"SettingsFlowID": updateLoginFlowResp.NewSettings.SettingsFlow.FlowID,
-			"CsrfToken":      updateLoginFlowResp.NewSettings.SettingsFlow.CsrfToken,
-			"Email":          session.Identity.Traits.Email,
-			"Firstname":      session.Identity.Traits.Firstname,
-			"Lastname":       session.Identity.Traits.Lastname,
-			"Nickname":       session.Identity.Traits.Nickname,
-			"BirthdateYear":  year,
-			"BirthdateMonth": month,
-			"BirthdateDay":   day,
-			"Information":    "プロフィールが更新されました。",
-		}).render(w, r, session)
-
-	} else {
-		setHeadersForReplaceBody(w, "/")
-		newView("top/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
-			"Items": items,
-		}).render(w, r, session)
+		return
 	}
+
+	// view top page
+	setHeadersForReplaceBody(w, "/")
+	newView("top/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
+		"Items": items,
+	}).render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -253,32 +240,32 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLoginPasskey
 type postAuthLoginPasskeyRequestParams struct {
-	FlowID                      string `validate:"uuid4"`
-	CsrfToken                   string `validate:"required"`
-	PasskeyLogin                string `validate:"required"`
-	PasskeyChallenge            string `validate:"required"`
-	UpdateSettingsAfterLoggedIn string
+	FlowID                string `validate:"uuid4"`
+	CsrfToken             string `validate:"required"`
+	PasskeyLogin          string `validate:"required"`
+	PasskeyChallenge      string `validate:"required"`
+	UpdateSettingsRequest string
 }
 
 // Extract parameters from http request
 func newPostAuthLoginPasskeyRequestParams(r *http.Request) *postAuthLoginPasskeyRequestParams {
 	return &postAuthLoginPasskeyRequestParams{
-		FlowID:                      r.URL.Query().Get("flow"),
-		CsrfToken:                   r.PostFormValue("csrf_token"),
-		PasskeyLogin:                r.PostFormValue("passkey_login"),
-		PasskeyChallenge:            r.PostFormValue("passkey_challenge"),
-		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
+		FlowID:                r.URL.Query().Get("flow"),
+		CsrfToken:             r.PostFormValue("csrf_token"),
+		PasskeyLogin:          r.PostFormValue("passkey_login"),
+		PasskeyChallenge:      r.PostFormValue("passkey_challenge"),
+		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
 }
 
 // Return parameters that can refer in view template
 func (p *postAuthLoginPasskeyRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID":                 p.FlowID,
-		"CsrfToken":                   p.CsrfToken,
-		"PasskeyLogin":                p.PasskeyLogin,
-		"PasskeyChallenge":            p.PasskeyChallenge,
-		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
+		"LoginFlowID":           p.FlowID,
+		"CsrfToken":             p.CsrfToken,
+		"PasskeyLogin":          p.PasskeyLogin,
+		"PasskeyChallenge":      p.PasskeyChallenge,
+		"UpdateSettingsRequest": p.UpdateSettingsRequest,
 	}
 }
 
@@ -348,31 +335,39 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 			CsrfToken:    reqParams.CsrfToken,
 			PasskeyLogin: reqParams.PasskeyLogin,
 		},
+		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
 		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
+	// update session
+	session = &updateLoginFlowResp.Session
+	addCookies(w, updateLoginFlowResp.Header.Cookie)
+
+	// view passkey settings page when updated settings after logged in.
+	if reqParams.UpdateSettingsRequest != "" {
+		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create settings flow error", "err", err)
+			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
+		return
+	}
+
 	// view authentication code input page for aal2 (MFA)
 	if kratos.SessionRequiredAal == kratos.Aal2 {
-		addCookies(w, updateLoginFlowResp.Header.Cookie)
 		setHeadersForReplaceBody(w, "/auth/login/mfa")
 		views.mfa.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// update session
-	session = &updateLoginFlowResp.Session
-
-	// update settings(profile) flow after logged in
-	if reqParams.UpdateSettingsAfterLoggedIn != "" {
-		// update settings
-		updateSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
-		return
-	}
-
-	addCookies(w, updateLoginFlowResp.Header.Cookie)
+	// view top page
 	setHeadersForReplaceBody(w, "/")
 	views.index.addParams(map[string]any{
 		"Items": items,
@@ -384,9 +379,10 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLogin
 type postAuthLoginOidcRequestParams struct {
-	FlowID    string `validate:"uuid4"`
-	CsrfToken string `validate:"required"`
-	Provider  string `validate:"required"`
+	FlowID                string `validate:"uuid4"`
+	CsrfToken             string `validate:"required"`
+	Provider              string `validate:"required"`
+	UpdateSettingsRequest string
 }
 
 // Extract parameters from http request
@@ -401,9 +397,10 @@ func newPostAuthLoginOidcRequestParams(r *http.Request) *postAuthLoginOidcReques
 // Return parameters that can refer in view template
 func (p *postAuthLoginOidcRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID": p.FlowID,
-		"CsrfToken":   p.CsrfToken,
-		"Provider":    p.Provider,
+		"LoginFlowID":           p.FlowID,
+		"CsrfToken":             p.CsrfToken,
+		"Provider":              p.Provider,
+		"UpdateSettingsRequest": p.UpdateSettingsRequest,
 	}
 }
 
@@ -458,7 +455,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	}
 
 	// update login flow
-	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal1,
@@ -467,6 +464,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 			CsrfToken: reqParams.CsrfToken,
 			Provider:  reqParams.Provider,
 		},
+		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
 		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
@@ -476,6 +474,20 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 	// update session
 	session = &updateLoginFlowResp.Session
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
+
+	// view passkey settings page when updated settings after logged in.
+	if reqParams.UpdateSettingsRequest != "" {
+		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create settings flow error", "err", err)
+			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
+		return
+	}
 
 	if updateLoginFlowResp.RedirectBrowserTo != "" {
 		slog.DebugContext(ctx, "redirect occured", "RedirectBrowserTo", updateLoginFlowResp.RedirectBrowserTo)
@@ -606,35 +618,34 @@ func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLoginCode
 type postAuthLoginCodeRequestParams struct {
-	FlowID                      string `validate:"uuid4"`
-	CsrfToken                   string `validate:"required"`
-	Identifier                  string `validate:"required,email" ja:"メールアドレス"`
-	Code                        string `validate:"required" ja:"認証コード"`
-	UpdateSettingsAfterLoggedIn string
-	ShowSettingsAfterLoggedIn   string
+	FlowID                string `validate:"uuid4"`
+	CsrfToken             string `validate:"required"`
+	Identifier            string `validate:"required,email" ja:"メールアドレス"`
+	Code                  string `validate:"required" ja:"認証コード"`
+	UpdateSettingsRequest string
+	SettingsFlowID        string
 }
 
 // Extract parameters from http request
 func newPostAuthLoginCodeRequestParams(r *http.Request) *postAuthLoginCodeRequestParams {
 	return &postAuthLoginCodeRequestParams{
-		FlowID:                      r.URL.Query().Get("flow"),
-		CsrfToken:                   r.PostFormValue("csrf_token"),
-		Identifier:                  r.PostFormValue("identifier"),
-		Code:                        r.PostFormValue("code"),
-		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
-		ShowSettingsAfterLoggedIn:   r.PostFormValue("show_settings_after_logged_in"),
+		FlowID:                r.URL.Query().Get("flow"),
+		CsrfToken:             r.PostFormValue("csrf_token"),
+		Identifier:            r.PostFormValue("identifier"),
+		Code:                  r.PostFormValue("code"),
+		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
 }
 
 // Return parameters that can refer in view template
 func (p *postAuthLoginCodeRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID":                 p.FlowID,
-		"CsrfToken":                   p.CsrfToken,
-		"Identifier":                  p.Identifier,
-		"Code":                        p.Code,
-		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
-		"ShowSettingsAfterLoggedIn":   p.ShowSettingsAfterLoggedIn,
+		"LoginFlowID":           p.FlowID,
+		"CsrfToken":             p.CsrfToken,
+		"Identifier":            p.Identifier,
+		"Code":                  p.Code,
+		"UpdateSettingsRequest": p.UpdateSettingsRequest,
+		"SettingsFlowID":        p.SettingsFlowID,
 	}
 }
 
@@ -703,6 +714,7 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 			Identifier: reqParams.Identifier,
 			Code:       reqParams.Code,
 		},
+		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
@@ -712,21 +724,40 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 
 	// update session
 	session = &updateLoginFlowResp.Session
+	addCookies(w, updateLoginFlowResp.Header.Cookie)
 
-	slog.Debug("handlePostAuthLoginCode", "kratosReqHeaderForNext", kratosReqHeaderForNext, "updateLoginFlowResp", updateLoginFlowResp)
-
-	slog.DebugContext(ctx, "handlePostAuthLoginCode", "reqParams", reqParams)
-	// update settings flow after logged in
-	if reqParams.UpdateSettingsAfterLoggedIn != "" {
-		updateSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
+	// view passkey settings page when updated settings after logged in.
+	if reqParams.UpdateSettingsRequest != "" {
+		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create settings flow error", "err", err)
+			views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
 		return
 	}
-	// show settings(password) after logged in
-	if reqParams.ShowSettingsAfterLoggedIn != "" {
-		showSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, showSettingsAfterLoggedInParamsFromString(reqParams.ShowSettingsAfterLoggedIn))
-		return
+
+	if reqParams.SettingsFlowID != "" {
+		getSettingsFlowResp, _, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
+			FlowID: reqParams.SettingsFlowID,
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "get settings flow error", "err", err)
+			views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", reqParams.SettingsFlowID))
+		newView("my/password.html").addParams(map[string]any{
+			"SettingsFlowID": reqParams.SettingsFlowID,
+			"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
+		}).render(w, r, session)
 	}
 
+	// view top page
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
 	views.top.addParams(map[string]any{
@@ -739,16 +770,21 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 // --------------------------------------------------------------------------
 // Request parameters for handleGetAuthLoginTotp
 type getAuthLoginTotpRequestParams struct {
+	UpdateSettingsRequest string
 }
 
 // Extract parameters from http request
 func newGetAuthLoginTotpRequestParams(r *http.Request) *getAuthLoginTotpRequestParams {
-	return &getAuthLoginTotpRequestParams{}
+	return &getAuthLoginTotpRequestParams{
+		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
+	}
 }
 
 // Return parameters that can refer in view template
 func (p *getAuthLoginTotpRequestParams) toViewParams() map[string]any {
-	return map[string]any{}
+	return map[string]any{
+		"UpdateSettingsRequest": p.UpdateSettingsRequest,
+	}
 }
 
 // Validate request parameters and return viewError
@@ -803,7 +839,7 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 	session := getSession(ctx)
 
 	// collect rendering data and validate request parameters.
-	_, views, baseViewError, err := prepareGetAuthLoginTotp(w, r)
+	reqParams, views, baseViewError, err := prepareGetAuthLoginTotp(w, r)
 	if err != nil {
 		slog.ErrorContext(ctx, "prepareGetAuthLoginTotp failed", "err", err)
 		return
@@ -820,7 +856,7 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 		views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: createLoginFlowAal2Resp.LoginFlow.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal2,
@@ -836,7 +872,25 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// update session
+	session = &updateLoginFlowResp.Session
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
+
+	// view passkey settings page when updated settings after logged in.
+	if reqParams.UpdateSettingsRequest != "" {
+		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create settings flow error", "err", err)
+			views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
+		return
+	}
+
+	// view top page
 	setHeadersForReplaceBody(w, "/auth/login/totp")
 	views.totp.addParams(map[string]any{
 		"LoginFlowID": createLoginFlowAal2Resp.LoginFlow.FlowID,
@@ -850,32 +904,32 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthLoginTotp
 type postAuthLoginTotpRequestParams struct {
-	FlowID                      string `validate:"uuid4"`
-	CsrfToken                   string `validate:"required"`
-	Identifier                  string `validate:"required,email" ja:"メールアドレス"`
-	TotpCode                    string `validate:"required" ja:"認証コード"`
-	UpdateSettingsAfterLoggedIn string
+	FlowID                string `validate:"uuid4"`
+	CsrfToken             string `validate:"required"`
+	Identifier            string `validate:"required,email" ja:"メールアドレス"`
+	TotpCode              string `validate:"required" ja:"認証コード"`
+	UpdateSettingsRequest string
 }
 
 // Extract parameters from http request
 func newPostAuthLoginTotpRequestParams(r *http.Request) *postAuthLoginTotpRequestParams {
 	return &postAuthLoginTotpRequestParams{
-		FlowID:                      r.URL.Query().Get("flow"),
-		CsrfToken:                   r.PostFormValue("csrf_token"),
-		Identifier:                  r.PostFormValue("identifier"),
-		TotpCode:                    r.PostFormValue("totp_code"),
-		UpdateSettingsAfterLoggedIn: r.PostFormValue("update_settings_after_logged_in"),
+		FlowID:                r.URL.Query().Get("flow"),
+		CsrfToken:             r.PostFormValue("csrf_token"),
+		Identifier:            r.PostFormValue("identifier"),
+		TotpCode:              r.PostFormValue("totp_code"),
+		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
 }
 
 // Return parameters that can refer in view template
 func (p *postAuthLoginTotpRequestParams) toViewParams() map[string]any {
 	return map[string]any{
-		"LoginFlowID":                 p.FlowID,
-		"CsrfToken":                   p.CsrfToken,
-		"Identifier":                  p.Identifier,
-		"Totp":                        p.TotpCode,
-		"UpdateSettingsAfterLoggedIn": p.UpdateSettingsAfterLoggedIn,
+		"LoginFlowID":           p.FlowID,
+		"CsrfToken":             p.CsrfToken,
+		"Identifier":            p.Identifier,
+		"Totp":                  p.TotpCode,
+		"UpdateSettingsRequest": p.UpdateSettingsRequest,
 	}
 }
 
@@ -954,10 +1008,17 @@ func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Reques
 	// update session
 	session = &updateLoginFlowResp.Session
 
-	// update settings(profile) flow after logged in
-	if reqParams.UpdateSettingsAfterLoggedIn != "" {
-		// update settings
-		updateSettingsAfterLoggedIn(ctx, w, r, session, kratosReqHeaderForNext, updateSettingsAfterLoggedInParamsFromString(reqParams.UpdateSettingsAfterLoggedIn))
+	// view passkey settings page when updated settings after logged in.
+	if reqParams.UpdateSettingsRequest != "" {
+		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+			Header: kratosReqHeaderForNext,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create settings flow error", "err", err)
+			views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			return
+		}
+		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
 		return
 	}
 

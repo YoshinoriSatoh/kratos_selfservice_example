@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 const (
@@ -704,11 +702,11 @@ func CreateLoginFlow(ctx context.Context, r CreateLoginFlowRequest) (CreateLogin
 // Update Login Flow
 // --------------------------------------------------------------------------
 type UpdateLoginFlowRequest struct {
-	FlowID                      string
-	Header                      KratosRequestHeader
-	Aal                         Aal
-	Body                        UpdateLoginFlowRequestBody
-	UpdateSettingsAfterLoggedIn string
+	FlowID                string
+	Header                KratosRequestHeader
+	Aal                   Aal
+	Body                  UpdateLoginFlowRequestBody
+	UpdateSettingsRequest string
 }
 
 type UpdateLoginFlowRequestBody struct {
@@ -722,24 +720,19 @@ type UpdateLoginFlowRequestBody struct {
 	PasskeyLogin string `json:"passkey_login,omitempty"`
 }
 
-type RequiredVerification struct {
-	ResponseHeader   KratosResponseHeader
-	VerificationFlow VerificationFlow
-	SettingsFlow     SettingsFlow
-}
-
-type NewSettings struct {
-	ResponseHeader KratosResponseHeader
-	SettingsFlow   SettingsFlow
-}
+// type RequiredVerification struct {
+// 	ResponseHeader   KratosResponseHeader
+// 	VerificationFlow VerificationFlow
+// }
 
 type UpdateLoginFlowResponse struct {
-	Header               KratosResponseHeader
-	Session              Session
-	RedirectBrowserTo    string
-	RequiredAal2         bool
-	RequiredVerification *RequiredVerification
-	NewSettings          *NewSettings
+	Header                 KratosResponseHeader
+	Session                Session
+	RedirectBrowserTo      string
+	RequiredAal2           bool
+	SettingsUpdatedMethod  string
+	VerificationFlow       *VerificationFlow
+	VerificationFlowCookie []string
 }
 
 type kratosUpdateLoginFlowResponseBody struct {
@@ -788,6 +781,7 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 			return UpdateLoginFlowResponse{
 				Header:            kratosResp.Header,
 				RedirectBrowserTo: err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo,
+				RequiredAal2:      SessionRequiredAal == Aal2,
 			}, kratosReqHeaderForNext, nil
 		} else {
 			slog.ErrorContext(ctx, "UpdateLoginFlow", "requestKratosPublic error", err)
@@ -802,8 +796,8 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 		return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
 	}
 
-	if r.UpdateSettingsAfterLoggedIn != "" {
-		params := updateSettingsAfterLoggedInParamsFromString(r.UpdateSettingsAfterLoggedIn)
+	if r.UpdateSettingsRequest != "" {
+		params := updateSettingsAfterLoggedInParamsFromString(r.UpdateSettingsRequest)
 		kratosRequestHeader := KratosRequestHeader{
 			Cookie: []string{
 				ExtractCsrfTokenCookie(r.Header),
@@ -812,30 +806,30 @@ func UpdateLoginFlow(ctx context.Context, r UpdateLoginFlowRequest) (UpdateLogin
 			ClientIP: kratosReqHeaderForNext.ClientIP,
 		}
 
-		var (
-			resp updateSettingsAfterLoggedInResponse
-		)
-		if params.Method == "profile" {
-			resp, err = updateSettingsProfileAfterLoggedIn(ctx, kratosRequestHeader, params)
-		} else if params.Method == "password" {
-			resp, err = updateSettingsPasswordAfterLoggedIn(ctx, kratosRequestHeader, params)
-		} else if params.Method == "totp" {
-			resp, err = updateSettingsTotpAfterLoggedIn(ctx, kratosRequestHeader, params)
-		}
+		kratosResp, kratosReqHeaderForNext, err := UpdateSettingsFlow(ctx, UpdateSettingsFlowRequest{
+			FlowID: params.FlowID,
+			Header: kratosRequestHeader,
+			Body: UpdateSettingsFlowRequestBody{
+				CsrfToken: params.CsrfToken,
+				Method:    params.Method,
+				Traits:    params.Traits,
+			},
+		})
 		if err != nil {
 			slog.ErrorContext(ctx, "UpdateLoginFlow updateSettingsAfterLoggedIn error", "err", err)
 			return UpdateLoginFlowResponse{}, kratosReqHeaderForNext, err
 		}
 
 		return UpdateLoginFlowResponse{
-			Header:               kratosResp.Header,
-			Session:              kratosRespBody.Session,
-			RequiredAal2:         SessionRequiredAal == Aal2,
-			RequiredVerification: resp.RequiredVerification,
-			NewSettings:          resp.NewSettings,
+			Header:                 kratosResp.Header,
+			Session:                kratosRespBody.Session,
+			RequiredAal2:           SessionRequiredAal == Aal2,
+			SettingsUpdatedMethod:  params.Method,
+			VerificationFlow:       kratosResp.VerificationFlow,
+			VerificationFlowCookie: kratosResp.VerificationFlowCookie,
 		}, kratosReqHeaderForNext, err
 	}
-
+	slog.Debug("UpdateLoginFlow", "SessionRequiredAal", SessionRequiredAal)
 	// Create response
 	response := UpdateLoginFlowResponse{
 		Header:       kratosResp.Header,
@@ -1059,11 +1053,12 @@ type UpdateRecoveryFlowRequestBody struct {
 }
 
 type UpdateRecoveryFlowResponse struct {
-	Header            KratosResponseHeader
-	Flow              RecoveryFlow
-	RecoveryFlowID    string
-	SettingsFlowID    string
-	RedirectBrowserTo string
+	Header          KratosResponseHeader
+	RecoveryFlow    *RecoveryFlow
+	SettingsFlow    *SettingsFlow
+	LoginFlow       *LoginFlow
+	LoginFlowCookie []string
+	// RedirectBrowserTo  string
 }
 
 type kratosUpdateRecoveryFlowResponseBody struct {
@@ -1073,7 +1068,7 @@ type kratosUpdateRecoveryFlowResponseBody struct {
 func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (UpdateRecoveryFlowResponse, KratosRequestHeader, error) {
 	// valiate parameter
 	if (r.Body.Email != "" && r.Body.Code != "") || (r.Body.Email == "" && r.Body.Code == "") {
-		return UpdateRecoveryFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
+		return UpdateRecoveryFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, r.Body.Code)
 	}
 
 	// Request to kratos
@@ -1089,10 +1084,11 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 		BodyBytes: kratosInputBytes,
 		Header:    r.Header,
 	})
-	var redirectBrowserTo string
+	// var redirectBrowserTo string
 	if err != nil {
 		if kratosResp.StatusCode == http.StatusUnprocessableEntity {
-			redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
+			// no op
+			// redirectBrowserTo = err.(ErrorBrowserLocationChangeRequired).RedirectBrowserTo
 		} else {
 			slog.ErrorContext(ctx, "UpdateRecoveryFlow", "requestKratosPublic error", err)
 			return UpdateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
@@ -1108,15 +1104,76 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 
 	// create response
 	response := UpdateRecoveryFlowResponse{
-		Header:            kratosResp.Header,
-		RedirectBrowserTo: redirectBrowserTo,
+		Header: kratosResp.Header,
+		// RedirectBrowserTo: redirectBrowserTo,
 	}
 	for _, c := range kratosRespBody.ContinueWith {
 		if c.Action == "show_settings_ui" {
-			response.SettingsFlowID = c.Flow.ID
+
+			// require aal1 session in request cookie when required aal2 session
+			// aal1 session exists in request and csrf_token cookie exists in above response.
+			headerForGetSettingsFlow := KratosRequestHeader{
+				Cookie:   mergeProxyResponseCookies(r.Header.Cookie, kratosResp.Header.Cookie),
+				ClientIP: r.Header.ClientIP,
+			}
+			getSettingsFlowResp, _, err := GetSettingsFlow(ctx, GetSettingsFlowRequest{
+				FlowID: c.Flow.ID,
+				Header: headerForGetSettingsFlow,
+			})
+			if err != nil {
+				response.SettingsFlow.FlowID = c.Flow.ID
+				var errGeneric ErrorGeneric
+				if errors.As(err, &errGeneric) && err.(ErrorGeneric).Err.ID == "session_aal2_required" {
+					// create and update login flow for aal2, send authentication code
+					createLoginFlowResp, _, err := CreateLoginFlow(ctx, CreateLoginFlowRequest{
+						Header:  r.Header,
+						Aal:     Aal2,
+						Refresh: true,
+					})
+					if err != nil {
+						slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
+						return UpdateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
+					}
+
+					// update login flow for aal2, send authentication code
+					_, _, err = UpdateLoginFlow(ctx, UpdateLoginFlowRequest{
+						FlowID: createLoginFlowResp.LoginFlow.FlowID,
+						Header: r.Header,
+						Aal:    Aal2,
+						Body: UpdateLoginFlowRequestBody{
+							Method:     "code",
+							CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,
+							Identifier: createLoginFlowResp.LoginFlow.CodeAddress,
+						},
+					})
+					if err != nil {
+						slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
+						return UpdateRecoveryFlowResponse{}, kratosReqHeaderForNext, err
+					}
+					response.LoginFlow = &createLoginFlowResp.LoginFlow
+					response.LoginFlowCookie = createLoginFlowResp.Header.Cookie
+					return response, kratosReqHeaderForNext, err
+
+				} else {
+					slog.ErrorContext(ctx, "UpdateSettingsFlow GetVerificationFlow error", "err", err)
+					return response, kratosReqHeaderForNext, err
+				}
+			}
+
+			response.SettingsFlow = &getSettingsFlowResp.SettingsFlow
+			return response, kratosReqHeaderForNext, nil
 		}
+
 		if c.Action == "show_recovery_ui" {
-			response.RecoveryFlowID = c.Flow.ID
+			getRecoveryFlowResp, _, err := GetRecoveryFlow(ctx, GetRecoveryFlowRequest{
+				FlowID: c.Flow.ID,
+				Header: kratosReqHeaderForNext,
+			})
+			if err != nil {
+				slog.ErrorContext(ctx, "UpdateSettingsFlow GetVerificationFlow error", "err", err)
+				return response, kratosReqHeaderForNext, err
+			}
+			response.RecoveryFlow = &getRecoveryFlowResp.RecoveryFlow
 		}
 	}
 	return response, kratosReqHeaderForNext, nil
@@ -1158,6 +1215,14 @@ func CreateOrGetSettingsFlow(ctx context.Context, h KratosRequestHeader, flowID 
 type GetSettingsFlowRequest struct {
 	FlowID string
 	Header KratosRequestHeader
+}
+
+func (p *GetSettingsFlowRequest) ToString() string {
+	jsonStr, err := json.Marshal(*p)
+	if err != nil {
+		slog.Error("GetSettingsFlowRequest.toString", "json Marshal error", err)
+	}
+	return base64.URLEncoding.EncodeToString(jsonStr)
 }
 
 type GetSettingsFlowResponse struct {
@@ -1265,11 +1330,21 @@ type UpdateSettingsFlowRequest struct {
 	Body   UpdateSettingsFlowRequestBody
 }
 
+func (p *UpdateSettingsFlowRequest) ToString() string {
+	jsonStr, err := json.Marshal(*p)
+	if err != nil {
+		slog.Error("UpdateSettingsFlowRequest.toString", "json Marshal error", err)
+	}
+	return base64.URLEncoding.EncodeToString(jsonStr)
+}
+
 type UpdateSettingsFlowResponse struct {
-	Header             KratosResponseHeader
-	SettingsFlowID     string
-	VerificationFlowID string
-	RedirectBrowserTo  string
+	Header                 KratosResponseHeader
+	SettingsFlow           *SettingsFlow
+	SettingsFlowCookie     []string
+	VerificationFlow       *VerificationFlow
+	VerificationFlowCookie []string
+	RedirectBrowserTo      string
 }
 
 type UpdateSettingsFlowRequestBody struct {
@@ -1342,10 +1417,28 @@ func UpdateSettingsFlow(ctx context.Context, r UpdateSettingsFlowRequest) (Updat
 	// Create response
 	for _, c := range kratosRespBody.ContinueWith {
 		if c.Action == "show_verification_ui" {
-			response.VerificationFlowID = c.Flow.ID
+			getVerificationFlowResp, _, err := GetVerificationFlow(ctx, GetVerificationFlowRequest{
+				FlowID: c.Flow.ID,
+				Header: kratosReqHeaderForNext,
+			})
+			if err != nil {
+				slog.ErrorContext(ctx, "UpdateSettingsFlow GetVerificationFlow error", "err", err)
+				return response, kratosReqHeaderForNext, err
+			}
+			response.VerificationFlow = &getVerificationFlowResp.VerificationFlow
+			response.VerificationFlowCookie = getVerificationFlowResp.Header.Cookie
 		}
 		if c.Action == "show_settings_ui" {
-			response.SettingsFlowID = c.Flow.ID
+			getSettingsFlowResp, _, err := GetSettingsFlow(ctx, GetSettingsFlowRequest{
+				FlowID: c.Flow.ID,
+				Header: kratosReqHeaderForNext,
+			})
+			if err != nil {
+				slog.ErrorContext(ctx, "UpdateSettingsFlow GetVerificationFlow error", "err", err)
+				return response, kratosReqHeaderForNext, err
+			}
+			response.SettingsFlow = &getSettingsFlowResp.SettingsFlow
+			response.SettingsFlowCookie = getSettingsFlowResp.Header.Cookie
 		}
 	}
 
@@ -1410,11 +1503,6 @@ type updateSettingsAfterLoggedInParams struct {
 	TotpUnlink string
 }
 
-type updateSettingsAfterLoggedInResponse struct {
-	RequiredVerification *RequiredVerification
-	NewSettings          *NewSettings
-}
-
 func (p *updateSettingsAfterLoggedInParams) toString() string {
 	jsonStr, err := json.Marshal(*p)
 	if err != nil {
@@ -1433,160 +1521,141 @@ func updateSettingsAfterLoggedInParamsFromString(base64str string) updateSetting
 	return h
 }
 
-func updateSettingsProfileAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
-	slog.InfoContext(ctx, "updateSettingsProfileAfterLoggedIn", "params", params)
+// func updateSettingsProfileAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
+// 	slog.InfoContext(ctx, "updateSettingsProfileAfterLoggedIn", "params", params)
 
-	kratosResp, kratosReqHeaderForNext, err := UpdateSettingsFlow(ctx, UpdateSettingsFlowRequest{
-		FlowID: params.FlowID,
-		Header: kratosRequestHeader,
-		Body: UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
-			Method:    "profile",
-			Traits:    params.Traits,
-		},
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "updateSettingsProfileAfterLoggedIn UpdateSettingsFlow error", "err", err)
-		return updateSettingsAfterLoggedInResponse{}, err
-	}
+// 	kratosResp, kratosReqHeaderForNext, err := UpdateSettingsFlow(ctx, UpdateSettingsFlowRequest{
+// 		FlowID: params.FlowID,
+// 		Header: kratosRequestHeader,
+// 		Body: UpdateSettingsFlowRequestBody{
+// 			CsrfToken: params.CsrfToken,
+// 			Method:    "profile",
+// 			Traits:    params.Traits,
+// 		},
+// 	})
+// 	if err != nil {
+// 		slog.ErrorContext(ctx, "updateSettingsProfileAfterLoggedIn UpdateSettingsFlow error", "err", err)
+// 		return updateSettingsAfterLoggedInResponse{}, err
+// 	}
 
-	if kratosResp.VerificationFlowID != "" {
-		getVerificationFlowResp, _, err := GetVerificationFlow(ctx, GetVerificationFlowRequest{
-			FlowID: kratosResp.VerificationFlowID,
-			Header: kratosReqHeaderForNext,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "updateSettingsProfileAfterLoggedIn GetVerificationFlow error", "err", err)
-			return updateSettingsAfterLoggedInResponse{}, err
-		}
+// 	if kratosResp.VerificationFlowID != "" {
+// 		getVerificationFlowResp, _, err := GetVerificationFlow(ctx, GetVerificationFlowRequest{
+// 			FlowID: kratosResp.VerificationFlowID,
+// 			Header: kratosReqHeaderForNext,
+// 		})
+// 		if err != nil {
+// 			slog.ErrorContext(ctx, "updateSettingsProfileAfterLoggedIn GetVerificationFlow error", "err", err)
+// 			return updateSettingsAfterLoggedInResponse{}, err
+// 		}
 
-		createSettingsFlowResp, _, err := CreateSettingsFlow(ctx, CreateSettingsFlowRequest{
-			Header: kratosRequestHeader,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "updateSettingsProfileAfterLoggedIn CreateSettingsFlow error", "err", err)
-			return updateSettingsAfterLoggedInResponse{}, err
-		}
+// 		return updateSettingsAfterLoggedInResponse{
+// 			RequiredVerification: &RequiredVerification{
+// 				VerificationFlow: getVerificationFlowResp.VerificationFlow,
+// 			},
+// 		}, nil
+// 	}
 
-		return updateSettingsAfterLoggedInResponse{
-			RequiredVerification: &RequiredVerification{
-				VerificationFlow: getVerificationFlowResp.VerificationFlow,
-				SettingsFlow:     createSettingsFlowResp.SettingsFlow,
-			},
-		}, nil
-	}
-	createSettingsFlowResp, _, err := CreateSettingsFlow(ctx, CreateSettingsFlowRequest{
-		Header: kratosRequestHeader,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "updateSettingsProfileAfterLoggedIn CreateSettingsFlow error", "err", err)
-		return updateSettingsAfterLoggedInResponse{}, err
-	}
-	return updateSettingsAfterLoggedInResponse{
-		NewSettings: &NewSettings{
-			SettingsFlow: createSettingsFlowResp.SettingsFlow,
-		},
-	}, nil
-}
+// 	return updateSettingsAfterLoggedInResponse{}, nil
+// }
 
-func updateSettingsPasswordAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
-	slog.InfoContext(ctx, "updateSettingsPasswordAfterLoggedIn", "params", params)
+// func updateSettingsPasswordAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
+// 	slog.InfoContext(ctx, "updateSettingsPasswordAfterLoggedIn", "params", params)
 
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-	}))
-	loginCodeView := newView("auth/login/code.html")
+// 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+// 		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
+// 	}))
+// 	loginCodeView := newView("auth/login/code.html")
 
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+// 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
-	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: params.FlowID,
-		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
-			Cookie: []string{
-				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
-				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
-			},
-			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
-		},
-		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken: params.CsrfToken,
-			Method:    "password",
-			Password:  params.Password,
-		},
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
+// 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+// 		FlowID: params.FlowID,
+// 		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
+// 			Cookie: []string{
+// 				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
+// 				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
+// 			},
+// 			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
+// 		},
+// 		Body: kratos.UpdateSettingsFlowRequestBody{
+// 			CsrfToken: params.CsrfToken,
+// 			Method:    "password",
+// 			Password:  params.Password,
+// 		},
+// 	})
+// 	if err != nil {
+// 		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+// 		return
+// 	}
 
-	whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-		Header: kratosReqHeaderForNext,
-	})
+// 	whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
+// 		Header: kratosReqHeaderForNext,
+// 	})
 
-	createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-		Header: kratosRequestHeader,
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-	addCookies(w, createSettingsFlowResp.Header.Cookie)
-	setHeadersForReplaceBody(w, "/my/password")
-	newView("my/password.html").addParams(map[string]any{
-		"SettingsTotpID": createSettingsFlowResp.SettingsFlow.FlowID,
-		"Information":    "パスワードが設定されました。",
-		"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
-	}).render(w, r, whoamiResp.Session)
-}
+// 	createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+// 		Header: kratosRequestHeader,
+// 	})
+// 	if err != nil {
+// 		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+// 		return
+// 	}
+// 	addCookies(w, createSettingsFlowResp.Header.Cookie)
+// 	setHeadersForReplaceBody(w, "/my/password")
+// 	newView("my/password.html").addParams(map[string]any{
+// 		"SettingsTotpID": createSettingsFlowResp.SettingsFlow.FlowID,
+// 		"Information":    "パスワードが設定されました。",
+// 		"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
+// 	}).render(w, r, whoamiResp.Session)
+// }
 
-func updateSettingsTotpAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
-	slog.InfoContext(ctx, "updateSettingsTotpAfterLoggedIn", "params", params)
+// func updateSettingsTotpAfterLoggedIn(ctx context.Context, kratosRequestHeader KratosRequestHeader, params updateSettingsAfterLoggedInParams) (updateSettingsAfterLoggedInResponse, error) {
+// 	slog.InfoContext(ctx, "updateSettingsTotpAfterLoggedIn", "params", params)
 
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-	}))
-	loginCodeView := newView("auth/login/code.html")
+// 	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+// 		MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
+// 	}))
+// 	loginCodeView := newView("auth/login/code.html")
 
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
+// 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
-	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
-		FlowID: params.FlowID,
-		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
-			Cookie: []string{
-				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
-				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
-			},
-			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
-		},
-		Body: kratos.UpdateSettingsFlowRequestBody{
-			CsrfToken:  params.CsrfToken,
-			Method:     "totp",
-			TotpCode:   params.TotpCode,
-			TotpUnlink: params.TotpUnlink,
-		},
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-	whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
-		Header: kratosReqHeaderForNext,
-	})
+// 	_, kratosReqHeaderForNext, err := kratos.UpdateSettingsFlow(ctx, kratos.UpdateSettingsFlowRequest{
+// 		FlowID: params.FlowID,
+// 		Header: kratos.KratosRequestHeader{ // required both aal1 kratos session and csrf_token cookie
+// 			Cookie: []string{
+// 				kratos.ExtractCsrfTokenCookie(kratosRequestHeader),
+// 				kratos.ExtractKratosSessionCookie(kratosRequestHeaderAfterLoggedIn),
+// 			},
+// 			ClientIP: kratosRequestHeaderAfterLoggedIn.ClientIP,
+// 		},
+// 		Body: kratos.UpdateSettingsFlowRequestBody{
+// 			CsrfToken:  params.CsrfToken,
+// 			Method:     "totp",
+// 			TotpCode:   params.TotpCode,
+// 			TotpUnlink: params.TotpUnlink,
+// 		},
+// 	})
+// 	if err != nil {
+// 		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+// 		return
+// 	}
+// 	whoamiResp, _ := kratos.Whoami(ctx, kratos.WhoamiRequest{
+// 		Header: kratosReqHeaderForNext,
+// 	})
 
-	createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-		Header: kratosRequestHeader,
-	})
-	if err != nil {
-		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-	addCookies(w, createSettingsFlowResp.Header.Cookie)
-	setHeadersForReplaceBody(w, "/my/totp")
-	newView("my/totp.html").addParams(map[string]any{
-		"SettingsTotpID": createSettingsFlowResp.SettingsFlow.FlowID,
-		"Information":    "認証アプリが設定されました。",
-		"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
-		"TotpQR":         "src=" + createSettingsFlowResp.SettingsFlow.TotpQR,
-		"TotpRegisted":   createSettingsFlowResp.SettingsFlow.TotpUnlink,
-	}).render(w, r, whoamiResp.Session)
-}
+// 	createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
+// 		Header: kratosRequestHeader,
+// 	})
+// 	if err != nil {
+// 		loginCodeView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+// 		return
+// 	}
+// 	addCookies(w, createSettingsFlowResp.Header.Cookie)
+// 	setHeadersForReplaceBody(w, "/my/totp")
+// 	newView("my/totp.html").addParams(map[string]any{
+// 		"SettingsTotpID": createSettingsFlowResp.SettingsFlow.FlowID,
+// 		"Information":    "認証アプリが設定されました。",
+// 		"CsrfToken":      createSettingsFlowResp.SettingsFlow.CsrfToken,
+// 		"TotpQR":         "src=" + createSettingsFlowResp.SettingsFlow.TotpQR,
+// 		"TotpRegisted":   createSettingsFlowResp.SettingsFlow.TotpUnlink,
+// 	}).render(w, r, whoamiResp.Session)
+// }

@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
 
@@ -205,10 +203,11 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 	}
 	addCookies(w, kratosResp.Header.Cookie)
 
-	if kratosResp.RedirectBrowserTo != "" {
-		redirect(w, r, kratosResp.RedirectBrowserTo)
-		w.WriteHeader(http.StatusOK)
-	}
+	// リダイレクトしない形に修正
+	// if kratosResp.RedirectBrowserTo != "" {
+	// 	redirect(w, r, kratosResp.RedirectBrowserTo)
+	// 	w.WriteHeader(http.StatusOK)
+	// }
 
 	// render
 	views.codeForm.addParams(map[string]any{
@@ -318,71 +317,29 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 	}
 
 	addCookies(w, kratosResp.Header.Cookie)
-	if kratosResp.RedirectBrowserTo != "" {
-		arr := strings.Split(kratosResp.RedirectBrowserTo, "=")
-		settingsFlowID := arr[1]
-		kratosRequestHeader.Cookie = mergeProxyResponseCookies(kratosRequestHeader.Cookie, kratosResp.Header.Cookie)
 
-		getSettingsFlowResp, _, err := kratos.GetSettingsFlow(ctx, kratos.GetSettingsFlowRequest{
-			FlowID: settingsFlowID,
-			Header: kratosRequestHeader,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "handlePostAuthRecoveryCode", "err", err)
-			var errGeneric kratos.ErrorGeneric
-			if errors.As(err, &errGeneric) && err.(kratos.ErrorGeneric).Err.ID == "session_aal2_required" {
-				afterLoggedInParams := &showSettingsAfterLoggedInParams{
-					FlowID:    reqParams.FlowID,
-					CsrfToken: getSettingsFlowResp.SettingsFlow.CsrfToken,
-					Method:    "password",
-				}
-				// create and update login flow for aal2, send authentication code
-				createLoginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-					Header:  kratosRequestHeader,
-					Aal:     kratos.Aal2,
-					Refresh: true,
-				})
-				if err != nil {
-					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-					views.recoveryCodeForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-					return
-				}
-
-				// update login flow for aal2, send authentication code
-				_, _, err = kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
-					FlowID: createLoginFlowResp.LoginFlow.FlowID,
-					Header: kratosRequestHeader,
-					Aal:    kratos.Aal2,
-					Body: kratos.UpdateLoginFlowRequestBody{
-						Method:     "code",
-						CsrfToken:  createLoginFlowResp.LoginFlow.CsrfToken,
-						Identifier: createLoginFlowResp.LoginFlow.CodeAddress,
-					},
-				})
-				if err != nil {
-					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-					views.recoveryCodeForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-					return
-				}
-				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
-				views.loginCode.addParams(map[string]any{
-					"LoginFlowID":               createLoginFlowResp.LoginFlow.FlowID,
-					"Information":               "パスワード更新のために再度ログインをお願いします。",
-					"CsrfToken":                 createLoginFlowResp.LoginFlow.CsrfToken,
-					"Identifier":                createLoginFlowResp.LoginFlow.CodeAddress,
-					"ShowSettingsAfterLoggedIn": afterLoggedInParams.toString(),
-				}).render(w, r, session)
-				return
-			}
-			views.recoveryCodeForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
-		}
-		addCookies(w, getSettingsFlowResp.Header.Cookie)
-		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", settingsFlowID))
-		views.myPassword.addParams(map[string]any{
-			"SettingsFlowID": settingsFlowID,
-			"CsrfToken":      getSettingsFlowResp.SettingsFlow.CsrfToken,
+	if kratosResp.LoginFlow != nil {
+		addCookies(w, kratosResp.LoginFlowCookie)
+		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", kratosResp.LoginFlow.FlowID))
+		views.loginCode.addParams(map[string]any{
+			"LoginFlowID":    kratosResp.LoginFlow.FlowID,
+			"Information":    "パスワード更新のために再度ログインをお願いします。",
+			"CsrfToken":      kratosResp.LoginFlow.CsrfToken,
+			"Identifier":     kratosResp.LoginFlow.CodeAddress,
+			"SettingsFlowID": kratosResp.SettingsFlow.FlowID,
 		}).render(w, r, session)
+		return
 	}
+
+	if err != nil {
+		slog.ErrorContext(ctx, "handlePostAuthRecoveryCode", "err", err)
+		views.recoveryCodeForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		return
+	}
+	addCookies(w, kratosResp.Header.Cookie)
+	setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", kratosResp.SettingsFlow.FlowID))
+	views.myPassword.addParams(map[string]any{
+		"SettingsFlowID": kratosResp.SettingsFlow.FlowID,
+		"CsrfToken":      kratosResp.SettingsFlow.CsrfToken,
+	}).render(w, r, session)
 }

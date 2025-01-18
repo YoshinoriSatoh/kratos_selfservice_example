@@ -82,36 +82,6 @@ func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
 	w.Header().Set("HX-Reswap", "innerHTML")
 }
 
-func mergeProxyResponseCookies(reqCookie []string, proxyRespCookies []string) []string {
-	var cookies []string
-	var hasCsrfToken bool
-	var hasSession bool
-	for _, respcv := range proxyRespCookies {
-		slog.Debug("mergeProxyResponseCookies", "respcv", respcv)
-		v := strings.Split(respcv, ";")[0]
-		cookies = append(cookies, v)
-		if strings.HasPrefix(respcv, "csrf_token") {
-			hasCsrfToken = true
-		}
-		if strings.HasPrefix(respcv, "kratos_session") {
-			hasSession = true
-		}
-	}
-	for _, reqcv := range reqCookie {
-		// for _, reqcv := range strings.Split(reqCookie, "; ") {
-		slog.Debug("mergeProxyResponseCookies", "reqcv", reqcv)
-		if !hasCsrfToken && strings.HasPrefix(reqcv, "csrf_token") {
-			cookies = append(cookies, reqcv)
-		}
-		if !hasSession && strings.HasPrefix(reqcv, "kratos_session") {
-			cookies = append(cookies, reqcv)
-		}
-	}
-
-	return cookies
-	// return strings.Join(cookies, "; ")
-}
-
 // ---------------------- viewError ----------------------
 type viewError struct {
 	validationFieldErrors map[string]validationFieldError

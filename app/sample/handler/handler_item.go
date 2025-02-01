@@ -22,33 +22,28 @@ type getItemRequestParams struct {
 	ItemID int
 }
 
-// Extract parameters from http request
-func newGetItemRequestParams(r *http.Request) *getItemRequestParams {
-	itemID, _ := strconv.Atoi(r.PathValue("id"))
-	return &getItemRequestParams{
-		ItemID: itemID,
-	}
-}
-
-// Return parameters that can refer in view template
-func (p *getItemRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"ItemID": p.ItemID,
-	}
-}
-
+// Handler GET /item/{id}
 func (p *Provider) handleGetItem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetItemRequestParams(r)
+	// get request parameters
+	reqParams := &getItemRequestParams{
+		ItemID: func() int {
+			itemID, _ := strconv.Atoi(r.PathValue("id"))
+			return itemID
+		}(),
+	}
 
 	// prepare views
-	itemDetailView := newView("item/detail.html").addParams(params.toViewParams())
+	itemDetailView := newView(TPL_ITEM_DETAIL).addParams(map[string]any{
+		"ItemID": reqParams.ItemID,
+	})
 
-	// render
-	item := items[params.ItemID]
+	// get item
+	item := items[reqParams.ItemID]
+
+	// render page
 	itemDetailView.addParams(map[string]any{
 		"Image":       item.Image,
 		"Name":        item.Name,
@@ -65,41 +60,41 @@ type getItemPurchaseRequestParams struct {
 	ItemID int
 }
 
-// Extract parameters from http request
-func newGetItemPurchaseRequestParams(r *http.Request) *getItemPurchaseRequestParams {
-	itemID, _ := strconv.Atoi(r.PathValue("id"))
-	return &getItemPurchaseRequestParams{
-		ItemID: itemID,
-	}
-}
-
-// Return parameters that can refer in view template
-func (p *getItemPurchaseRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"ItemID": p.ItemID,
-	}
-}
-
 func (p *Provider) handleGetItemPurchase(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newGetItemRequestParams(r)
+	// get request parameters
+	reqParams := &getItemPurchaseRequestParams{
+		ItemID: func() int {
+			itemID, _ := strconv.Atoi(r.PathValue("id"))
+			return itemID
+		}(),
+	}
 
 	// prepare views
-	itemPurchaseView := newView("item/purchase.html").addParams(params.toViewParams())
-	itemPurchaseConfirmView := newView("item/_purchase_confirm.html").addParams(params.toViewParams())
-	itemPurchaseWithoutAuthView := newView("item/_purchase_without_auth.html").addParams(params.toViewParams())
+	itemPurchaseView := newView(TPL_ITEM_PURCHASE).addParams(map[string]any{
+		"ItemID": reqParams.ItemID,
+	})
+	itemPurchaseConfirmView := newView(TPL_ITEM_PURCHASE_CONFIRM).addParams(map[string]any{
+		"ItemID": reqParams.ItemID,
+	})
+	itemPurchaseWithoutAuthView := newView(TPL_ITEM_PURCHASE_WITHOUT_AUTH).addParams(map[string]any{
+		"ItemID": reqParams.ItemID,
+	})
 
-	// render
-	item := items[params.ItemID]
+	// get item
+	item := items[reqParams.ItemID]
+
+	// prepare view parameters
 	viewParams := map[string]any{
 		"Image":       item.Image,
 		"Name":        item.Name,
 		"Description": item.Description,
 		"Price":       pkgVars.printer.Sprintf("%d", item.Price),
 	}
+
+	// render page
 	if isAuthenticated(session) {
 		if r.Header.Get("HX-Request") == "true" {
 			itemPurchaseConfirmView.addParams(viewParams).render(w, r, session)
@@ -119,35 +114,31 @@ type postItemPurchaseRequestParams struct {
 	ItemID int
 }
 
-// Extract parameters from http request
-func newPostItemPurchaseRequestParams(r *http.Request) *postItemPurchaseRequestParams {
-	itemID, _ := strconv.Atoi(r.PathValue("id"))
-	return &postItemPurchaseRequestParams{
-		ItemID: itemID,
-	}
-}
-
-// Return parameters that can refer in view template
-func (p *postItemPurchaseRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"ItemID": p.ItemID,
-	}
-}
-
+// Handler POST /item/{id}/purchase
 func (p *Provider) handlePostItemPurchase(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect request parameters
-	params := newPostItemPurchaseRequestParams(r)
+	// get request parameters
+	reqParams := &postItemPurchaseRequestParams{
+		ItemID: func() int {
+			itemID, _ := strconv.Atoi(r.PathValue("id"))
+			return itemID
+		}(),
+	}
 
 	// prepare views
-	itemPurchaseCompleteView := newView("item/_purchase_complete.html").addParams(params.toViewParams())
+	itemPurchaseCompleteView := newView(TPL_ITEM_PURCHASE_COMPLETE).addParams(map[string]any{
+		"ItemID": reqParams.ItemID,
+	})
 
+	// simulate purchase process
 	time.Sleep(3 * time.Second)
 
-	// render
-	item := items[params.ItemID]
+	// get item
+	item := items[reqParams.ItemID]
+
+	// render page
 	itemPurchaseCompleteView.addParams(map[string]any{
 		"Image":       item.Image,
 		"Name":        item.Name,

@@ -18,33 +18,6 @@ type getAuthLoginRequestParams struct {
 	ReturnTo string `validate:"omitempty"`
 }
 
-// Return parameters that can refer in view template
-func (p *getAuthLoginRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"LoginFlowID": p.FlowID,
-		"ReturnTo":    p.ReturnTo,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthLoginRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(p))
-
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-		}
-	}
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
 func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
@@ -56,13 +29,21 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// prepare views
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	loginIndexView := newView("auth/login/index.html").addParams(reqParams.toViewParams())
+	loginIndexView := newView(TPL_AUTH_LOGIN_INDEX).addParams(map[string]any{
+		"LoginFlowID": reqParams.FlowID,
+		"ReturnTo":    reqParams.ReturnTo,
+	})
 
 	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
+	for k := range viewError.validationFieldErrors {
+		if k == "FlowID" {
+			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
+				MessageID: "ERR_FALLBACK",
+			})))
+		}
+	}
+	if viewError.hasError() {
 		slog.ErrorContext(ctx, "handlePostAuthLoginPassword validation error", "messages", viewError.messages)
 		loginIndexView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
@@ -77,7 +58,7 @@ func (p *Provider) handleGetAuthLogin(w http.ResponseWriter, r *http.Request) {
 	})
 	// OIDC Loginの場合、同一クレデンシャルが存在する場合、既存Identityとのリンクを促すためエラーにしない
 	if err != nil && loginFlow.DuplicateIdentifier == "" {
-		loginIndexView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		loginIndexView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -122,28 +103,6 @@ type postAuthLoginPasswordRequestParams struct {
 	UpdateSettingsRequest string
 }
 
-// Return parameters that can refer in view template
-func (p *postAuthLoginPasswordRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"LoginFlowID":           p.FlowID,
-		"CsrfToken":             p.CsrfToken,
-		"Identifier":            p.Identifier,
-		"Password":              p.Password,
-		"UpdateSettingsRequest": p.UpdateSettingsRequest,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthLoginPasswordRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(params))
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
 func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
@@ -158,13 +117,17 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	}
 
 	// prepare views
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	passwordFormView := newView("auth/login/_password_form.html").addParams(reqParams.toViewParams())
+	passwordFormView := newView(TPL_AUTH_LOGIN_FORM).addParams(map[string]any{
+		"LoginFlowID":           reqParams.FlowID,
+		"CsrfToken":             reqParams.CsrfToken,
+		"Identifier":            reqParams.Identifier,
+		"Password":              reqParams.Password,
+		"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+	})
 
 	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
+	if viewError.hasError() {
 		slog.ErrorContext(ctx, "handlePostAuthLoginPassword validation error", "messages", viewError.messages)
 		passwordFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
@@ -185,7 +148,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
-		passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		passwordFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -200,7 +163,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "create settings flow error", "err", err)
-			passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			passwordFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 
@@ -209,7 +172,7 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 			// render verification code page (replace <body> tag and push url)
 			addCookies(w, updateLoginFlowResp.VerificationFlowCookie)
 			setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", updateLoginFlowResp.VerificationFlow.FlowID))
-			newView("auth/verification/code.html").addParams(map[string]any{
+			newView(TPL_AUTH_VERIFICATION_CODE).addParams(map[string]any{
 				"VerificationFlowID": updateLoginFlowResp.VerificationFlow.FlowID,
 				"CsrfToken":          updateLoginFlowResp.VerificationFlow.CsrfToken,
 				"IsUsedFlow":         updateLoginFlowResp.VerificationFlow.IsUsedFlow(),
@@ -223,14 +186,20 @@ func (p *Provider) handlePostAuthLoginPassword(w http.ResponseWriter, r *http.Re
 
 	// view authentication code input page for aal2 (MFA)
 	if updateLoginFlowResp.RequiredAal2 {
-		setHeadersForReplaceBody(w, "/auth/login/mfa")
-		newView("auth/login/mfa.html").addParams(reqParams.toViewParams()).render(w, r, session)
+		setHeadersForReplaceBody(w, "/auth/login/totp")
+		newView(TPL_AUTH_LOGIN_TOTP).addParams(map[string]any{
+			"LoginFlowID":           reqParams.FlowID,
+			"CsrfToken":             reqParams.CsrfToken,
+			"Identifier":            reqParams.Identifier,
+			"Password":              reqParams.Password,
+			"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+		}).render(w, r, session)
 		return
 	}
 
 	// view top page
 	setHeadersForReplaceBody(w, "/")
-	newView("top/index.html").addParams(reqParams.toViewParams()).addParams(map[string]any{
+	newView(TPL_TOP_INDEX).addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }
@@ -247,79 +216,33 @@ type postAuthLoginPasskeyRequestParams struct {
 	UpdateSettingsRequest string
 }
 
-// Extract parameters from http request
-func newPostAuthLoginPasskeyRequestParams(r *http.Request) *postAuthLoginPasskeyRequestParams {
-	return &postAuthLoginPasskeyRequestParams{
+func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// get request parameters
+	reqParams := postAuthLoginPasskeyRequestParams{
 		FlowID:                r.URL.Query().Get("flow"),
 		CsrfToken:             r.PostFormValue("csrf_token"),
 		PasskeyLogin:          r.PostFormValue("passkey_login"),
 		PasskeyChallenge:      r.PostFormValue("passkey_challenge"),
 		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
-}
 
-// Return parameters that can refer in view template
-func (p *postAuthLoginPasskeyRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"LoginFlowID":           p.FlowID,
-		"CsrfToken":             p.CsrfToken,
-		"PasskeyLogin":          p.PasskeyLogin,
-		"PasskeyChallenge":      p.PasskeyChallenge,
-		"UpdateSettingsRequest": p.UpdateSettingsRequest,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthLoginPasskeyRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(params))
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// Views
-type getAuthLoginPasskeyViews struct {
-	index *view
-	form  *view
-	mfa   *view
-}
-
-// collect rendering data and validate request parameters.
-func preparePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) (*postAuthLoginPasskeyRequestParams, getAuthLoginPasskeyViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	reqParams := newPostAuthLoginPasskeyRequestParams(r)
-	views := getAuthLoginPasskeyViews{
-		index: newView("top/index.html").addParams(reqParams.toViewParams()),
-		form:  newView("auth/login/_passkey_form.html").addParams(reqParams.toViewParams()),
-		mfa:   newView("auth/login/mfa.html").addParams(reqParams.toViewParams()),
-	}
+	// prepare views
+	passkeyFormView := newView(TPL_AUTH_LOGIN_FORM).addParams(map[string]any{
+		"LoginFlowID":           reqParams.FlowID,
+		"CsrfToken":             reqParams.CsrfToken,
+		"PasskeyLogin":          reqParams.PasskeyLogin,
+		"PasskeyChallenge":      reqParams.PasskeyChallenge,
+		"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+	})
 
 	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.form.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
-func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := preparePostAuthLoginPasskey(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "preparePostAuthLoginPasskey failed", "err", err)
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
+	if viewError.hasError() {
+		slog.ErrorContext(ctx, "handlePostAuthLoginPasskey validation error", "messages", viewError.messages)
+		passkeyFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -338,7 +261,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
-		views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		passkeyFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -353,7 +276,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "create settings flow error", "err", err)
-			views.form.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			passkeyFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
@@ -361,15 +284,21 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 	}
 
 	// view authentication code input page for aal2 (MFA)
-	if kratos.SessionRequiredAal == kratos.Aal2 {
-		setHeadersForReplaceBody(w, "/auth/login/mfa")
-		views.mfa.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	if updateLoginFlowResp.RequiredAal2 {
+		setHeadersForReplaceBody(w, "/auth/login/totp")
+		newView(TPL_AUTH_LOGIN_TOTP).addParams(map[string]any{
+			"LoginFlowID":           reqParams.FlowID,
+			"CsrfToken":             reqParams.CsrfToken,
+			"PasskeyLogin":          reqParams.PasskeyLogin,
+			"PasskeyChallenge":      reqParams.PasskeyChallenge,
+			"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+		}).render(w, r, session)
 		return
 	}
 
 	// view top page
 	setHeadersForReplaceBody(w, "/")
-	views.index.addParams(map[string]any{
+	newView(TPL_TOP_INDEX).addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }
@@ -377,7 +306,7 @@ func (p *Provider) handlePostAuthLoginPasskey(w http.ResponseWriter, r *http.Req
 // --------------------------------------------------------------------------
 // POST /auth/login/oidc
 // --------------------------------------------------------------------------
-// Request parameters for handlePostAuthLogin
+// Request parameters for handlePostAuthLoginOidc
 type postAuthLoginOidcRequestParams struct {
 	FlowID                string `validate:"uuid4"`
 	CsrfToken             string `validate:"required"`
@@ -385,72 +314,30 @@ type postAuthLoginOidcRequestParams struct {
 	UpdateSettingsRequest string
 }
 
-// Extract parameters from http request
-func newPostAuthLoginOidcRequestParams(r *http.Request) *postAuthLoginOidcRequestParams {
-	return &postAuthLoginOidcRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Provider:  r.PostFormValue("provider"),
-	}
-}
-
-// Return parameters that can refer in view template
-func (p *postAuthLoginOidcRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"LoginFlowID":           p.FlowID,
-		"CsrfToken":             p.CsrfToken,
-		"Provider":              p.Provider,
-		"UpdateSettingsRequest": p.UpdateSettingsRequest,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthLoginOidcRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(params))
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// Views
-type getAuthLoginOidcViews struct {
-	index *view
-}
-
-// collect rendering data and validate request parameters.
-func prepareGetAuthLoginOidc(w http.ResponseWriter, r *http.Request) (*postAuthLoginOidcRequestParams, getAuthLoginOidcViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	reqParams := newPostAuthLoginOidcRequestParams(r)
-	views := getAuthLoginOidcViews{
-		index: newView("auth/login/index.html").addParams(reqParams.toViewParams()),
-	}
-
-	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
 func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthLoginOidc(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginOidc failed", "err", err)
+	// get request parameters
+	reqParams := postAuthLoginOidcRequestParams{
+		FlowID:    r.URL.Query().Get("flow"),
+		CsrfToken: r.PostFormValue("csrf_token"),
+		Provider:  r.PostFormValue("provider"),
+	}
+
+	// prepare views
+	loginView := newView(TPL_AUTH_LOGIN_INDEX).addParams(map[string]any{
+		"LoginFlowID":           reqParams.FlowID,
+		"CsrfToken":             reqParams.CsrfToken,
+		"Provider":              reqParams.Provider,
+		"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+	})
+
+	// validate request parameters
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
+	if viewError.hasError() {
+		slog.ErrorContext(ctx, "handlePostAuthLoginOidc validation error", "messages", viewError.messages)
+		loginView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -467,7 +354,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
-		views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		loginView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -482,7 +369,7 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "create settings flow error", "err", err)
-			views.index.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			loginView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
@@ -491,14 +378,13 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 
 	if updateLoginFlowResp.RedirectBrowserTo != "" {
 		slog.DebugContext(ctx, "redirect occured", "RedirectBrowserTo", updateLoginFlowResp.RedirectBrowserTo)
-		// w.Header().Set("HX-Redirect", updateLoginFlowResp.RedirectBrowserTo)
 		redirect(w, r, updateLoginFlowResp.RedirectBrowserTo, map[string]string{})
 		return
 	}
 
 	// render
 	setHeadersForReplaceBody(w, "/")
-	views.index.addParams(map[string]any{
+	loginView.addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }
@@ -508,24 +394,23 @@ func (p *Provider) handlePostAuthLoginOidc(w http.ResponseWriter, r *http.Reques
 // --------------------------------------------------------------------------
 // Request parameters for handleGetAuthLoginCode
 type getAuthLoginCodeRequestParams struct {
+	FlowID string `validate:"uuid4"`
 }
 
-// Extract parameters from http request
-func newGetAuthLoginCodeRequestParams(r *http.Request) *getAuthLoginCodeRequestParams {
-	return &getAuthLoginCodeRequestParams{}
-}
+func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
 
-// Return parameters that can refer in view template
-func (p *getAuthLoginCodeRequestParams) toViewParams() map[string]any {
-	return map[string]any{}
-}
+	// get request parameters
+	reqParams := &getAuthLoginCodeRequestParams{
+		FlowID: r.URL.Query().Get("flow"),
+	}
 
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthLoginCodeRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(p))
+	// prepare views
+	loginCodeView := newView(TPL_AUTH_LOGIN_CODE)
 
+	// validate request parameters
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
 	for k := range viewError.validationFieldErrors {
 		if k == "FlowID" {
 			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -533,50 +418,12 @@ func (p *getAuthLoginCodeRequestParams) validate() *viewError {
 			})))
 		}
 	}
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// Views
-type getAuthLoginCodeViews struct {
-	code *view
-}
-
-// collect rendering data and validate request parameters.
-func prepareGetAuthLoginCode(w http.ResponseWriter, r *http.Request) (*getAuthLoginCodeRequestParams, getAuthLoginCodeViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	reqParams := newGetAuthLoginCodeRequestParams(r)
-	views := getAuthLoginCodeViews{
-		code: newView("auth/login/code.html").addParams(reqParams.toViewParams()),
-	}
-
-	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.code.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
-func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data and validate request parameters.
-	_, views, baseViewError, err := prepareGetAuthLoginCode(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginCode failed", "err", err)
+	if viewError.hasError() {
+		slog.ErrorContext(ctx, "handlePostAuthLoginPassword validation error", "messages", viewError.messages)
+		loginCodeView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
+
 	// create and update login flow for aal2, send authentication code
 	createLoginFlowAal2Resp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header:  makeDefaultKratosRequestHeader(r),
@@ -585,9 +432,11 @@ func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-		views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		loginCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
+
+	// update login flow
 	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: createLoginFlowAal2Resp.LoginFlow.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
@@ -600,13 +449,13 @@ func (p *Provider) handleGetAuthLoginCode(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-		views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		loginCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/auth/login/code")
-	views.code.addParams(map[string]any{
+	loginCodeView.addParams(map[string]any{
 		"LoginFlowID": createLoginFlowAal2Resp.LoginFlow.FlowID,
 		"CsrfToken":   createLoginFlowAal2Resp.LoginFlow.CsrfToken,
 		"Identifier":  createLoginFlowAal2Resp.LoginFlow.CodeAddress,
@@ -624,17 +473,6 @@ type postAuthLoginCodeRequestParams struct {
 	Code                  string `validate:"required" ja:"認証コード"`
 	UpdateSettingsRequest string
 	SettingsFlowID        string
-}
-
-// Extract parameters from http request
-func newPostAuthLoginCodeRequestParams(r *http.Request) *postAuthLoginCodeRequestParams {
-	return &postAuthLoginCodeRequestParams{
-		FlowID:                r.URL.Query().Get("flow"),
-		CsrfToken:             r.PostFormValue("csrf_token"),
-		Identifier:            r.PostFormValue("identifier"),
-		Code:                  r.PostFormValue("code"),
-		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
-	}
 }
 
 // Return parameters that can refer in view template
@@ -660,44 +498,25 @@ func (params *postAuthLoginCodeRequestParams) validate() *viewError {
 	return viewError
 }
 
-// Views
-type getAuthLoginCodePostViews struct {
-	code *view
-	top  *view
-}
-
-// collect rendering data and validate request parameters.
-func prepareGetAuthLoginCodePost(w http.ResponseWriter, r *http.Request) (*postAuthLoginCodeRequestParams, getAuthLoginCodePostViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	reqParams := newPostAuthLoginCodeRequestParams(r)
-	views := getAuthLoginCodePostViews{
-		code: newView("auth/login/code.html").addParams(reqParams.toViewParams()),
-		top:  newView("top/index.html").addParams(reqParams.toViewParams()),
-	}
-
-	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.code.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
 func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthLoginCodePost(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginPost failed", "err", err)
+	// get request parameters
+	reqParams := &postAuthLoginCodeRequestParams{
+		FlowID:                r.URL.Query().Get("flow"),
+		CsrfToken:             r.PostFormValue("csrf_token"),
+		Identifier:            r.PostFormValue("identifier"),
+		Code:                  r.PostFormValue("code"),
+		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
+	}
+
+	// prepare views
+	loginCodeView := newView(TPL_AUTH_LOGIN_CODE).addParams(reqParams.toViewParams())
+
+	// validate request parameters
+	if viewError := reqParams.validate(); viewError.hasError() {
+		loginCodeView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -718,7 +537,7 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
-		views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		loginCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
@@ -754,7 +573,7 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "get settings flow error", "err", err)
-			views.code.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			loginCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 		setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", reqParams.SettingsFlowID))
@@ -767,7 +586,7 @@ func (p *Provider) handlePostAuthLoginCode(w http.ResponseWriter, r *http.Reques
 	// view top page
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
 	setHeadersForReplaceBody(w, "/")
-	views.top.addParams(map[string]any{
+	newView(TPL_TOP_INDEX).addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }
@@ -780,26 +599,22 @@ type getAuthLoginTotpRequestParams struct {
 	UpdateSettingsRequest string
 }
 
-// Extract parameters from http request
-func newGetAuthLoginTotpRequestParams(r *http.Request) *getAuthLoginTotpRequestParams {
-	return &getAuthLoginTotpRequestParams{
+func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// get request parameters
+	reqParams := &getAuthLoginTotpRequestParams{
 		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
-}
 
-// Return parameters that can refer in view template
-func (p *getAuthLoginTotpRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"UpdateSettingsRequest": p.UpdateSettingsRequest,
-	}
-}
+	// prepare views
+	totpView := newView(TPL_AUTH_LOGIN_TOTP).addParams(map[string]any{
+		"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+	})
 
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *getAuthLoginTotpRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(p))
-
+	// validate request parameters
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
 	for k := range viewError.validationFieldErrors {
 		if k == "FlowID" {
 			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -807,52 +622,13 @@ func (p *getAuthLoginTotpRequestParams) validate() *viewError {
 			})))
 		}
 	}
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// Views
-type getAuthLoginTotpViews struct {
-	totp *view
-}
-
-// collect rendering data and validate request parameters.
-func prepareGetAuthLoginTotp(w http.ResponseWriter, r *http.Request) (*getAuthLoginTotpRequestParams, getAuthLoginTotpViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	reqParams := newGetAuthLoginTotpRequestParams(r)
-	views := getAuthLoginTotpViews{
-		totp: newView("auth/login/totp.html").addParams(reqParams.toViewParams()),
-	}
-
-	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.totp.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
-func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthLoginTotp(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginTotp failed", "err", err)
+	if viewError.hasError() {
+		slog.ErrorContext(ctx, "handleGetAuthLoginTotp validation error", "messages", viewError.messages)
+		totpView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
-	// create and update login flow for aal2, send authentication totp
+	// create and update login flow for aal2, send authentication code
 	createLoginFlowAal2Resp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
 		Header:  makeDefaultKratosRequestHeader(r),
 		Aal:     kratos.Aal2,
@@ -860,10 +636,11 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-		views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		totpView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
-	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
+
+	updateLoginFlowResp, _, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: createLoginFlowAal2Resp.LoginFlow.FlowID,
 		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal2,
@@ -875,31 +652,13 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-		views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		totpView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
-	// update session
-	session = &updateLoginFlowResp.Session
 	addCookies(w, updateLoginFlowResp.Header.Cookie)
-
-	// view passkey settings page when updated settings after logged in.
-	if reqParams.UpdateSettingsRequest != "" {
-		createSettingsFlowResp, _, err := kratos.CreateSettingsFlow(ctx, kratos.CreateSettingsFlowRequest{
-			Header: kratosReqHeaderForNext,
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "create settings flow error", "err", err)
-			views.totp.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
-			return
-		}
-		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
-		return
-	}
-
-	// view top page
 	setHeadersForReplaceBody(w, "/auth/login/totp")
-	views.totp.addParams(map[string]any{
+	totpView.addParams(map[string]any{
 		"LoginFlowID": createLoginFlowAal2Resp.LoginFlow.FlowID,
 		"CsrfToken":   createLoginFlowAal2Resp.LoginFlow.CsrfToken,
 		"Identifier":  createLoginFlowAal2Resp.LoginFlow.CodeAddress,
@@ -918,86 +677,40 @@ type postAuthLoginTotpRequestParams struct {
 	UpdateSettingsRequest string
 }
 
-// Extract parameters from http request
-func newPostAuthLoginTotpRequestParams(r *http.Request) *postAuthLoginTotpRequestParams {
-	return &postAuthLoginTotpRequestParams{
+func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// get request parameters
+	reqParams := &postAuthLoginTotpRequestParams{
 		FlowID:                r.URL.Query().Get("flow"),
 		CsrfToken:             r.PostFormValue("csrf_token"),
 		Identifier:            r.PostFormValue("identifier"),
 		TotpCode:              r.PostFormValue("totp_code"),
 		UpdateSettingsRequest: r.PostFormValue("update_settings_request"),
 	}
-}
 
-// Return parameters that can refer in view template
-func (p *postAuthLoginTotpRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"LoginFlowID":           p.FlowID,
-		"CsrfToken":             p.CsrfToken,
-		"Identifier":            p.Identifier,
-		"Totp":                  p.TotpCode,
-		"UpdateSettingsRequest": p.UpdateSettingsRequest,
-	}
-}
-
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (params *postAuthLoginTotpRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(params))
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// Views
-type getAuthLoginTotpPostViews struct {
-	totpForm *view
-	top      *view
-}
-
-// collect rendering data and validate request parameters.
-func prepareGetAuthLoginTotpPost(w http.ResponseWriter, r *http.Request) (*postAuthLoginTotpRequestParams, getAuthLoginTotpPostViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGIN_DEFAULT",
-	}))
-	reqParams := newPostAuthLoginTotpRequestParams(r)
-	views := getAuthLoginTotpPostViews{
-		totpForm: newView("auth/login/_totp_form.html").addParams(reqParams.toViewParams()),
-		top:      newView("top/index.html").addParams(reqParams.toViewParams()),
-	}
+	// prepare views
+	totpFormView := newView(TPL_AUTH_LOGIN_TOTP).addParams(map[string]any{
+		"LoginFlowID":           reqParams.FlowID,
+		"CsrfToken":             reqParams.CsrfToken,
+		"Identifier":            reqParams.Identifier,
+		"Totp":                  reqParams.TotpCode,
+		"UpdateSettingsRequest": reqParams.UpdateSettingsRequest,
+	})
 
 	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.totpForm.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
-func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data and validate request parameters.
-	reqParams, views, baseViewError, err := prepareGetAuthLoginTotpPost(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "prepareGetAuthLoginPost failed", "err", err)
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
+	if viewError.hasError() {
+		slog.ErrorContext(ctx, "handlePostAuthLoginTotp validation error", "messages", viewError.messages)
+		totpFormView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
-
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
 	// update login flow
 	updateLoginFlowResp, kratosReqHeaderForNext, err := kratos.UpdateLoginFlow(ctx, kratos.UpdateLoginFlowRequest{
 		FlowID: reqParams.FlowID,
-		Header: kratosRequestHeader,
+		Header: makeDefaultKratosRequestHeader(r),
 		Aal:    kratos.Aal2,
 		Body: kratos.UpdateLoginFlowRequestBody{
 			Method:     "totp",
@@ -1005,15 +718,17 @@ func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Reques
 			Identifier: reqParams.Identifier,
 			TotpCode:   reqParams.TotpCode,
 		},
+		UpdateSettingsRequest: reqParams.UpdateSettingsRequest,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update login flow error", "err", err)
-		views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		totpFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 		return
 	}
 
 	// update session
 	session = &updateLoginFlowResp.Session
+	addCookies(w, updateLoginFlowResp.Header.Cookie)
 
 	// view passkey settings page when updated settings after logged in.
 	if reqParams.UpdateSettingsRequest != "" {
@@ -1022,16 +737,16 @@ func (p *Provider) handlePostAuthLoginTotp(w http.ResponseWriter, r *http.Reques
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "create settings flow error", "err", err)
-			views.totpForm.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			totpFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
 			return
 		}
 		settingsView(updateLoginFlowResp.SettingsUpdatedMethod, session, createSettingsFlowResp.SettingsFlow).render(w, r, session)
 		return
 	}
 
-	addCookies(w, updateLoginFlowResp.Header.Cookie)
+	// view top page
 	setHeadersForReplaceBody(w, "/")
-	views.top.addParams(map[string]any{
+	newView(TPL_TOP_INDEX).addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
 }
@@ -1044,26 +759,22 @@ type postAuthLogoutRequestParams struct {
 	FlowID string `validate:"omitempty,uuid4"`
 }
 
-// Extract parameters from http request
-func newPostAuthLogoutRequestParams(r *http.Request) *postAuthLogoutRequestParams {
-	return &postAuthLogoutRequestParams{
+func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// get request parameters
+	reqParams := &postAuthLogoutRequestParams{
 		FlowID: r.URL.Query().Get("flow"),
 	}
-}
 
-// Return parameters that can refer in view template
-func (p *postAuthLogoutRequestParams) toViewParams() map[string]any {
-	return map[string]any{
-		"LogoutFlowID": p.FlowID,
-	}
-}
+	// prepare views
+	logoutView := newView("auth/logout/index.html").addParams(map[string]any{
+		"LogoutFlowID": reqParams.FlowID,
+	})
 
-// Validate request parameters and return viewError
-// If you do not want Validation errors to be displayed near input fields,
-// store them in ErrorMessages and return them, so that the errors are displayed anywhere in the template.
-func (p *postAuthLogoutRequestParams) validate() *viewError {
-	viewError := newViewError().extract(pkgVars.validate.Struct(p))
-
+	// validate request parameters
+	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
 	for k := range viewError.validationFieldErrors {
 		if k == "FlowID" {
 			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
@@ -1071,64 +782,24 @@ func (p *postAuthLogoutRequestParams) validate() *viewError {
 			})))
 		}
 	}
-
-	// Individual validations write here that cannot validate in common validations
-
-	return viewError
-}
-
-// Views
-type postAuthLogoutViews struct {
-	index *view
-	top   *view
-}
-
-// collect rendering data and validate request parameters.
-func preparePostAuthLogout(w http.ResponseWriter, r *http.Request) (*postAuthLogoutRequestParams, postAuthLogoutViews, *viewError, error) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data
-	baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		MessageID: "ERR_LOGOUT_DEFAULT",
-	}))
-	reqParams := newPostAuthLogoutRequestParams(r)
-	views := postAuthLogoutViews{
-		index: newView("auth/logout/index.html").addParams(reqParams.toViewParams()),
-		top:   newView("top/index.html").addParams(reqParams.toViewParams()),
-	}
-
-	// validate request parameters
-	if viewError := reqParams.validate(); viewError.hasError() {
-		views.index.addParams(viewError.toViewParams()).render(w, r, session)
-		return reqParams, views, baseViewError, fmt.Errorf("validation error: %v", viewError)
-	}
-
-	return reqParams, views, baseViewError, nil
-}
-
-func (p *Provider) handlePostAuthLogout(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// collect rendering data and validate request parameters.
-	_, views, _, err := preparePostAuthLogout(w, r)
-	if err != nil {
-		slog.ErrorContext(ctx, "preparePostAuthLogout failed", "err", err)
+	if viewError.hasError() {
+		slog.ErrorContext(ctx, "handlePostAuthLogout validation error", "messages", viewError.messages)
+		logoutView.addParams(viewError.toViewParams()).render(w, r, session)
 		return
 	}
 
-	updateLogoutFlowResp, _, err := kratos.Logout(ctx, kratos.LogoutRequest{
+	// logout
+	logoutResp, _, err := kratos.Logout(ctx, kratos.LogoutRequest{
 		Header: makeDefaultKratosRequestHeader(r),
 	})
 	if err != nil {
-		setHeadersForReplaceBody(w, "/")
-		views.top.addParams(map[string]any{
-			"Items": items,
-		}).render(w, r, session)
+		slog.ErrorContext(ctx, "logout error", "err", err)
+		logoutView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
+		return
 	}
 
 	// change location
-	addCookies(w, updateLogoutFlowResp.Header.Cookie)
+	addCookies(w, logoutResp.Header.Cookie)
+	setHeadersForReplaceBody(w, "/")
 	w.Header().Set("HX-Location", "/")
 }

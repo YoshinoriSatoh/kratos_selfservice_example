@@ -475,7 +475,7 @@ func (p *Provider) handleGetAuthLoginTotp(w http.ResponseWriter, r *http.Request
 	totpView := newView(TPL_AUTH_LOGIN_TOTP)
 
 	// bind and validate request parameters
-	var reqParams getAuthLoginCodeRequestParams
+	var reqParams getAuthLoginTotpRequestParams
 	if err := bindAndValidateRequest(r, &reqParams); err != nil {
 		slog.Error("handleGetAuthLoginTotp bind request error", "err", err)
 		totpView.setValidationFieldError(err).render(w, r, session)

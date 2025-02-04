@@ -52,7 +52,7 @@
         type="button" 
         class="sm:w-80 text-white bg-[#4285F4] hover:bg-[#4285F4]/90 focus:ring-4 focus:outline-none focus:ring-[#4285F4]/50 font-medium rounded-lg text-sm pl-24 py-2.5 text-center inline-flex dark:focus:ring-[#4285F4]/55 me-2 mb-2"
         hx-post="/auth/login/oidc?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
-        hx-vals='{"provider": "google"}'
+        hx-vals='{"oidc_provider": "google"}'
         hx-swap="outerHTML" 
         hx-target="this">
         <svg class="w-4 h-4 me-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 19">
@@ -66,7 +66,7 @@
         type="button" 
         class="sm:w-80 text-white bg-[#24292F] hover:bg-[#24292F]/90 focus:ring-4 focus:outline-none focus:ring-[#24292F]/50 font-medium rounded-lg text-sm pl-24 py-2.5 text-center inline-flex items-center dark:focus:ring-gray-500 dark:hover:bg-[#050708]/30 me-2 mb-2"
         hx-post="/auth/login/oidc?flow={{.LoginFlowID}}&return_to={{.ReturnTo}}" 
-        hx-vals='{"provider": "github"}'
+        hx-vals='{"oidc_provider": "github"}'
         hx-swap="outerHTML" 
         hx-target="this">
         <svg class="w-4 h-4 me-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">

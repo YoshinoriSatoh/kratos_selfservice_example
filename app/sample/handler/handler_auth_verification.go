@@ -6,8 +6,6 @@ import (
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
-
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 // --------------------------------------------------------------------------
@@ -15,7 +13,8 @@ import (
 // --------------------------------------------------------------------------
 // Request parameters for handleGetAuthVerification
 type getAuthVerificationRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
+	FlowID   string `form:"flow" validate:"omitempty,uuid4"`
+	ReturnTo string `form:"return_to" validate:"omitempty"`
 }
 
 // Handler GET /auth/verification
@@ -23,192 +22,37 @@ func (p *Provider) handleGetAuthVerification(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &getAuthVerificationRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
+	// views
+	indexView := newView(TPL_AUTH_VERIFICATION_INDEX)
 
-	// prepare views
-	indexView := newView(TPL_AUTH_VERIFICATION_INDEX).addParams(map[string]any{
-		"VerificationFlowID": reqParams.FlowID,
-	})
-
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-		}
-	}
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handleGetAuthVerification validation error", "messages", viewError.messages)
-		indexView.addParams(viewError.toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams getAuthVerificationRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handleGetAuthVerification bind request error", "err", err)
+		indexView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
 
+	// add request params to views
+	indexView.addParams(requestParamsToMap(reqParams))
+
 	// create or get verification Flow
-	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
+	response, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, kratos.CreateOrGetVerificationFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+	})
 	if err != nil {
-		indexView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "create verification flow error", "err", err)
+		indexView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
 	// render page
 	addCookies(w, kratosResponseHeader.Cookie)
 	indexView.addParams(map[string]any{
-		"VerificationFlowID": verificationFlow.FlowID,
-		"CsrfToken":          verificationFlow.CsrfToken,
-		"IsUsedFlow":         verificationFlow.IsUsedFlow,
-	}).render(w, r, session)
-}
-
-// --------------------------------------------------------------------------
-// GET /auth/verification/code
-// --------------------------------------------------------------------------
-// Request parameters for handleGetAuthVerificationCode
-type getAuthVerificationCodeRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
-}
-
-// Handler GET /auth/verification/code
-func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// get request parameters
-	reqParams := &getAuthVerificationCodeRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
-
-	// prepare views
-	verificationCodeView := newView(TPL_AUTH_VERIFICATION_CODE_FORM).addParams(map[string]any{
-		"VerificationFlowID": reqParams.FlowID,
-	})
-
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-		}
-	}
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handleGetAuthVerificationCode validation error", "messages", viewError.messages)
-		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
-	}
-
-	// create or get verification Flow
-	verificationFlow, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
-	if err != nil {
-		verificationCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-
-	// render page
-	addCookies(w, kratosResponseHeader.Cookie)
-	verificationCodeView.addParams(map[string]any{
-		"VerificationFlowID": verificationFlow.FlowID,
-		"CsrfToken":          verificationFlow.CsrfToken,
-		"IsUsedFlow":         verificationFlow.IsUsedFlow,
-	}).render(w, r, session)
-}
-
-// --------------------------------------------------------------------------
-// POST /auth/verificatoin/code
-// --------------------------------------------------------------------------
-// Request parameters for handlePostAuthRegistrationCode
-type postAuthVerificationCodeRequestParams struct {
-	FlowID    string `validate:"uuid4"`
-	CsrfToken string `validate:"required"`
-	Code      string `validate:"required,len=6,number" ja:"検証コード"`
-	Render    string
-}
-
-// Handler POST /auth/verification/code
-func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	session := getSession(ctx)
-
-	// get request parameters
-	reqParams := &postAuthVerificationCodeRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		Render:    r.PostFormValue("render"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Code:      r.PostFormValue("code"),
-	}
-
-	// prepare views
-	verificationCodeView := newView(TPL_AUTH_VERIFICATION_CODE_FORM).addParams(map[string]any{
-		"VerificationFlowID": reqParams.FlowID,
-		"Render":             reqParams.Render,
-		"CsrfToken":          reqParams.CsrfToken,
-		"Code":               reqParams.Code,
-	})
-
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" || k == "CsrfToken" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-			break
-		}
-	}
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handlePostAuthVerificationCode validation error", "messages", viewError.messages)
-		verificationCodeView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
-	}
-
-	// Verification Flow 更新
-	_, kratosReqHeaderForNext, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
-		FlowID: reqParams.FlowID,
-		Header: makeDefaultKratosRequestHeader(r),
-		Body: kratos.UpdateVerificationFlowRequestBody{
-			Code:      reqParams.Code,
-			CsrfToken: reqParams.CsrfToken,
-		},
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "update verification error", "err", err)
-		verificationCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-
-	if reqParams.Render != "" {
-		fmt.Println(reqParams.Render)
-		v := viewFromQueryParam(reqParams.Render)
-		setHeadersForReplaceBody(w, v.Path)
-		viewFromQueryParam(reqParams.Render).render(w, r, session)
-		return
-	}
-
-	// create login flow after verification
-	loginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
-		Header:  kratosReqHeaderForNext,
-		Refresh: true,
-		Aal:     kratos.Aal1,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "create login flow error", "err", err)
-		verificationCodeView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
-		return
-	}
-
-	// render login page
-	addCookies(w, loginFlowResp.Header.Cookie)
-	newView(TPL_AUTH_LOGIN_INDEX).addParams(map[string]any{
-		"LoginFlowID": loginFlowResp.LoginFlow.FlowID,
-		"Information": pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "コードによる検証が完了しました。お手数ですが改めてログインしてください。",
-		}),
-		"CsrfToken": loginFlowResp.LoginFlow.CsrfToken,
+		"VerificationFlowID": response.VerificationFlow.FlowID,
+		"CsrfToken":          response.VerificationFlow.CsrfToken,
+		"IsUsedFlow":         response.VerificationFlow.IsUsedFlow,
 	}).render(w, r, session)
 }
 
@@ -217,9 +61,9 @@ func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthVerificationEmail
 type postAuthVerificationEmailRequestParams struct {
-	FlowID    string `validate:"uuid4"`
-	CsrfToken string `validate:"required"`
-	Email     string `validate:"required,email" ja:"メールアドレス"`
+	FlowID    string `form:"flow" validate:"uuid4"`
+	CsrfToken string `json:"csrf_token" validate:"required"`
+	Email     string `json:"email" validate:"required,email" ja:"メールアドレス"`
 }
 
 // Handler POST /auth/verification/email
@@ -227,35 +71,19 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &postAuthVerificationEmailRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Email:     r.PostFormValue("email"),
-	}
+	// views
+	verificationEmailView := newView(TPL_AUTH_VERIFICATION_FORM)
 
-	// prepare views
-	verificationEmailView := newView(TPL_AUTH_VERIFICATION_FORM).addParams(map[string]any{
-		"VerificationFlowID": reqParams.FlowID,
-		"CsrfToken":          reqParams.CsrfToken,
-		"Email":              reqParams.Email,
-	})
-
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" || k == "CsrfToken" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
-			break
-		}
-	}
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handlePostAuthVerificationEmail validation error", "messages", viewError.messages)
-		verificationEmailView.addParams(viewError.toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams postAuthVerificationEmailRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostAuthVerificationEmail bind request error", "err", err)
+		verificationEmailView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
+
+	// add request params to views
+	verificationEmailView.addParams(requestParamsToMap(reqParams))
 
 	// update verification flow
 	verificationFlowResp, _, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
@@ -268,15 +96,126 @@ func (p *Provider) handlePostAuthVerificationEmail(w http.ResponseWriter, r *htt
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "update verification error", "err", err)
-		verificationEmailView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
+		verificationEmailView.setKratosMsg(err).render(w, r, session)
+		return
+	}
+
+	addCookies(w, verificationFlowResp.Header.Cookie)
+	redirect(w, r, fmt.Sprintf("/auth/registration/credential?flow=%s", reqParams.FlowID), []string{})
+}
+
+// --------------------------------------------------------------------------
+// GET /auth/verification/code
+// --------------------------------------------------------------------------
+// Request parameters for handleGetAuthVerificationCode
+type getAuthVerificationCodeRequestParams struct {
+	FlowID   string `form:"flow" validate:"omitempty,uuid4"`
+	ReturnTo string `form:"return_to" validate:"omitempty"`
+}
+
+// Handler GET /auth/verification/code
+func (p *Provider) handleGetAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// views
+	verificationCodeView := newView(TPL_AUTH_VERIFICATION_CODE_FORM)
+
+	// bind and validate request parameters
+	var reqParams getAuthVerificationCodeRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handleGetAuthVerificationCode bind request error", "err", err)
+		verificationCodeView.setValidationFieldError(err).render(w, r, session)
+		return
+	}
+
+	// add request params to views
+	verificationCodeView.addParams(requestParamsToMap(reqParams))
+
+	// create or get verification Flow
+	response, kratosResponseHeader, _, err := kratos.CreateOrGetVerificationFlow(ctx, kratos.CreateOrGetVerificationFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "create verification flow error", "err", err)
+		verificationCodeView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
 	// render page
-	addCookies(w, verificationFlowResp.Header.Cookie)
-	verificationEmailView.addParams(map[string]any{
-		"VerificationFlowID": verificationFlowResp.Flow.FlowID,
-		"CsrfToken":          verificationFlowResp.Flow.CsrfToken,
-		"IsUsedFlow":         verificationFlowResp.Flow.IsUsedFlow,
+	addCookies(w, kratosResponseHeader.Cookie)
+	verificationCodeView.addParams(map[string]any{
+		"VerificationFlowID": response.VerificationFlow.FlowID,
+		"CsrfToken":          response.VerificationFlow.CsrfToken,
+		"IsUsedFlow":         response.VerificationFlow.IsUsedFlow,
 	}).render(w, r, session)
+}
+
+// --------------------------------------------------------------------------
+// POST /auth/verificatoin/code
+// --------------------------------------------------------------------------
+// Request parameters for handlePostAuthVerificationCode
+type postAuthVerificationCodeRequestParams struct {
+	FlowID    string `form:"flow" validate:"uuid4"`
+	CsrfToken string `json:"csrf_token" validate:"required"`
+	Code      string `json:"code" validate:"required,len=6,number" ja:"検証コード"`
+	Render    string `form:"render" validate:"omitempty"`
+}
+
+// Handler POST /auth/verification/code
+func (p *Provider) handlePostAuthVerificationCode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	session := getSession(ctx)
+
+	// views
+	verificationCodeView := newView(TPL_AUTH_VERIFICATION_CODE_FORM)
+
+	// bind and validate request parameters
+	var reqParams postAuthVerificationCodeRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostAuthVerificationCode bind request error", "err", err)
+		verificationCodeView.setValidationFieldError(err).render(w, r, session)
+		return
+	}
+
+	// add request params to views
+	verificationCodeView.addParams(requestParamsToMap(reqParams))
+
+	// update verification flow
+	_, kratosReqHeaderForNext, err := kratos.UpdateVerificationFlow(ctx, kratos.UpdateVerificationFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+		Body: kratos.UpdateVerificationFlowRequestBody{
+			Code:      reqParams.Code,
+			CsrfToken: reqParams.CsrfToken,
+		},
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "update verification error", "err", err)
+		verificationCodeView.setKratosMsg(err).render(w, r, session)
+		return
+	}
+
+	if reqParams.Render != "" {
+		v := viewFromQueryParam(reqParams.Render)
+		redirect(w, r, v.Path, []string{})
+		return
+	}
+
+	// create login flow after verification
+	loginFlowResp, _, err := kratos.CreateLoginFlow(ctx, kratos.CreateLoginFlowRequest{
+		Header:  kratosReqHeaderForNext,
+		Refresh: true,
+		Aal:     kratos.Aal1,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "create login flow error", "err", err)
+		verificationCodeView.setKratosMsg(err).render(w, r, session)
+		return
+	}
+
+	addCookies(w, loginFlowResp.Header.Cookie)
+	redirectUrlForPush := fmt.Sprintf("/auth/login?flow=%s", reqParams.FlowID)
+	redirect(w, r, fmt.Sprintf("%s?information=%s", redirectUrlForPush, "コードによる検証が完了しました。お手数ですが改めてログインしてください。"), []string{"information"})
 }

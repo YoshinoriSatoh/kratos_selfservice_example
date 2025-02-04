@@ -35,30 +35,41 @@ const (
 // --------------------------------------------------------------------------
 // Create or Get Registration Flow
 // --------------------------------------------------------------------------
-func KratosCreateOrGetRegistrationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RegistrationFlow, KratosResponseHeader, KratosRequestHeader, error) {
+type CreateOrGetRegistrationFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
+}
+
+type CreateOrGetRegistrationFlowResponse struct {
+	RegistrationFlow               RegistrationFlow
+	UpdateRegistrationFlowResponse *UpdateRegistrationFlowResponse
+}
+
+func CreateOrGetRegistrationFlow(ctx context.Context, r CreateOrGetRegistrationFlowRequest) (CreateOrGetRegistrationFlowResponse, KratosResponseHeader, KratosRequestHeader, error) {
 	var (
 		err              error
-		registrationFlow RegistrationFlow
+		response         CreateOrGetRegistrationFlowResponse
 		kratosReqHeader  KratosRequestHeader
 		kratosRespHeader KratosResponseHeader
 	)
-	if flowID == "" {
+	if r.FlowID == "" {
 		var createRegistrationFlowResp CreateRegistrationFlowResponse
 		createRegistrationFlowResp, kratosReqHeader, err = CreateRegistrationFlow(ctx, CreateRegistrationFlowRequest{
-			Header: h,
+			Header: r.Header,
 		})
 		kratosRespHeader = createRegistrationFlowResp.Header
-		registrationFlow = createRegistrationFlowResp.RegistrationFlow
+		response.RegistrationFlow = createRegistrationFlowResp.RegistrationFlow
 	} else {
 		var getRegistrationFlowResp GetRegistrationFlowResponse
 		getRegistrationFlowResp, kratosReqHeader, err = GetRegistrationFlow(ctx, GetRegistrationFlowRequest{
-			FlowID: flowID,
-			Header: h,
+			FlowID: r.FlowID,
+			Header: r.Header,
 		})
 		kratosRespHeader = getRegistrationFlowResp.Header
-		registrationFlow = getRegistrationFlowResp.RegistrationFlow
+		response.RegistrationFlow = getRegistrationFlowResp.RegistrationFlow
+		response.UpdateRegistrationFlowResponse = getRegistrationFlowResp.UpdateRegistrationFlowResponse
 	}
-	return registrationFlow, kratosRespHeader, kratosReqHeader, err
+	return response, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -70,8 +81,9 @@ type GetRegistrationFlowRequest struct {
 }
 
 type GetRegistrationFlowResponse struct {
-	Header           KratosResponseHeader
-	RegistrationFlow RegistrationFlow
+	Header                         KratosResponseHeader
+	RegistrationFlow               RegistrationFlow
+	UpdateRegistrationFlowResponse *UpdateRegistrationFlowResponse
 }
 
 type kratosGetRegisrationFlowRespnseBody struct {
@@ -122,6 +134,35 @@ func GetRegistrationFlow(ctx context.Context, r GetRegistrationFlowRequest) (Get
 	if oidcProvider.Provided() {
 		// Set to response the traits that was got from OIDC provider if OIDC callback
 		setTraitsFromUiNodes(&response.RegistrationFlow.Traits, kratosRespBody.Ui.Nodes)
+
+		// Link identity if exists
+		identities, err := AdminListIdentities(ctx, AdminListIdentitiesRequest{
+			CredentialIdentifier: response.RegistrationFlow.Traits.Email,
+		})
+		if err != nil {
+			slog.Error("AdminGetIdentity failed", "error", err)
+			return GetRegistrationFlowResponse{}, kratosReqHeaderForNext, err
+		}
+		for _, identity := range identities {
+			if identity.Traits.Email == response.RegistrationFlow.Traits.Email {
+				// update Registration Flow
+				kratosResp, kratosReqHeaderForNext, err := UpdateRegistrationFlow(ctx, UpdateRegistrationFlowRequest{
+					FlowID: response.RegistrationFlow.FlowID,
+					Header: kratosReqHeaderForNext,
+					Body: UpdateRegistrationFlowRequestBody{
+						Method:    "oidc",
+						CsrfToken: response.RegistrationFlow.CsrfToken,
+						Provider:  string(response.RegistrationFlow.OidcProvider),
+						Traits:    identity.Traits,
+					},
+				})
+				if err != nil {
+					slog.Error("UpdateRegistrationFlow failed", "error", err)
+					return GetRegistrationFlowResponse{}, kratosReqHeaderForNext, err
+				}
+				response.UpdateRegistrationFlowResponse = &kratosResp
+			}
+		}
 	} else {
 		response.RegistrationFlow.PasskeyCreateData = getPasskeyCreateData(kratosRespBody.Ui.Nodes)
 	}
@@ -217,10 +258,11 @@ type UpdateRegistrationFlowRequestBody struct {
 }
 
 type UpdateRegistrationFlowResponse struct {
-	Header              KratosResponseHeader
-	VerificationFlowID  string
-	RedirectBrowserTo   string
-	DuplicateIdentifier string
+	Header                 KratosResponseHeader
+	RedirectBrowserTo      string
+	DuplicateIdentifier    string
+	VerificationFlow       *VerificationFlow
+	VerificationFlowCookie []string
 }
 
 type kratosUpdateRegisrationFlowPasswordRespnseBody struct {
@@ -309,7 +351,16 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 	}
 	for _, c := range kratosRespBody.ContinueWith {
 		if c.Action == "show_verification_ui" {
-			response.VerificationFlowID = c.Flow.ID
+			getVerificationFlowResp, _, err := GetVerificationFlow(ctx, GetVerificationFlowRequest{
+				FlowID: c.Flow.ID,
+				Header: kratosReqHeaderForNext,
+			})
+			if err != nil {
+				slog.ErrorContext(ctx, "UpdateSettingsFlow GetVerificationFlow error", "err", err)
+				return response, kratosReqHeaderForNext, err
+			}
+			response.VerificationFlow = &getVerificationFlowResp.VerificationFlow
+			response.VerificationFlowCookie = getVerificationFlowResp.Header.Cookie
 		}
 	}
 
@@ -319,31 +370,40 @@ func UpdateRegistrationFlow(ctx context.Context, r UpdateRegistrationFlowRequest
 // --------------------------------------------------------------------------
 // Create or Get Verification Flow
 // --------------------------------------------------------------------------
+type CreateOrGetVerificationFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
+}
+
+type CreateOrGetVerificationFlowResponse struct {
+	VerificationFlow VerificationFlow
+}
+
 // CreateOrGetVerificationFlow handles the logic for creating or getting a verification flow
-func CreateOrGetVerificationFlow(ctx context.Context, h KratosRequestHeader, flowID string) (VerificationFlow, KratosResponseHeader, KratosRequestHeader, error) {
+func CreateOrGetVerificationFlow(ctx context.Context, r CreateOrGetVerificationFlowRequest) (CreateOrGetVerificationFlowResponse, KratosResponseHeader, KratosRequestHeader, error) {
 	var (
 		err              error
-		verificationFlow VerificationFlow
+		response         CreateOrGetVerificationFlowResponse
 		kratosReqHeader  KratosRequestHeader
 		kratosRespHeader KratosResponseHeader
 	)
-	if flowID == "" {
+	if r.FlowID == "" {
 		var createVerificationFlowResp CreateVerificationFlowResponse
 		createVerificationFlowResp, kratosReqHeader, err = CreateVerificationFlow(ctx, CreateVerificationFlowRequest{
-			Header: h,
+			Header: r.Header,
 		})
 		kratosRespHeader = createVerificationFlowResp.Header
-		verificationFlow = createVerificationFlowResp.VerificationFlow
+		response.VerificationFlow = createVerificationFlowResp.VerificationFlow
 	} else {
 		var getVerificationFlowResp GetVerificationFlowResponse
 		getVerificationFlowResp, kratosReqHeader, err = GetVerificationFlow(ctx, GetVerificationFlowRequest{
-			Header: h,
-			FlowID: flowID,
+			Header: r.Header,
+			FlowID: r.FlowID,
 		})
 		kratosRespHeader = getVerificationFlowResp.Header
-		verificationFlow = getVerificationFlowResp.VerificationFlow
+		response.VerificationFlow = getVerificationFlowResp.VerificationFlow
 	}
-	return verificationFlow, kratosRespHeader, kratosReqHeader, err
+	return response, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -482,7 +542,7 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 	//   email設定時は、Verification Flowを更新して、アカウント検証メールを送信
 	//   code設定時は、Verification Flowを完了
 	if (r.Body.Email != "" && r.Body.Code != "") || (r.Body.Email == "" && r.Body.Code == "") {
-		return UpdateVerificationFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, "code", r.Body.Code)
+		return UpdateVerificationFlowResponse{}, r.Header, fmt.Errorf("parameter convination error. email: %s, code: %s", r.Body.Email, r.Body.Code)
 	}
 
 	// Request to kratos
@@ -525,45 +585,6 @@ func UpdateVerificationFlow(ctx context.Context, r UpdateVerificationFlowRequest
 	// }
 
 	return response, kratosReqHeaderForNext, nil
-}
-
-// --------------------------------------------------------------------------
-// Create or Get Login Flow
-// --------------------------------------------------------------------------
-type CreateOrGetLoginFlowRequest struct {
-	FlowID  string
-	Header  KratosRequestHeader
-	Refresh bool
-	Aal     Aal
-}
-
-// CreateOrGetLoginFlow handles the logic for creating or getting a login flow
-func CreateOrGetLoginFlow(ctx context.Context, r CreateOrGetLoginFlowRequest) (LoginFlow, KratosResponseHeader, KratosRequestHeader, error) {
-	var (
-		err              error
-		loginFlow        LoginFlow
-		kratosReqHeader  KratosRequestHeader
-		kratosRespHeader KratosResponseHeader
-	)
-	if r.FlowID == "" {
-		var createLoginFlowResp CreateLoginFlowResponse
-		createLoginFlowResp, kratosReqHeader, err = CreateLoginFlow(ctx, CreateLoginFlowRequest{
-			Header:  r.Header,
-			Refresh: r.Refresh,
-			Aal:     r.Aal,
-		})
-		kratosRespHeader = createLoginFlowResp.Header
-		loginFlow = createLoginFlowResp.LoginFlow
-	} else {
-		var getLoginFlowResp GetLoginFlowResponse
-		getLoginFlowResp, kratosReqHeader, err = GetLoginFlow(ctx, GetLoginFlowRequest{
-			Header: r.Header,
-			FlowID: r.FlowID,
-		})
-		kratosRespHeader = getLoginFlowResp.Header
-		loginFlow = getLoginFlowResp.LoginFlow
-	}
-	return loginFlow, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -903,31 +924,40 @@ func Logout(ctx context.Context, r LogoutRequest) (LogoutResponse, KratosRequest
 // --------------------------------------------------------------------------
 // Create or Get Recovery Flow
 // --------------------------------------------------------------------------
+type CreateOrGetRecoveryFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
+}
+
+type CreateOrGetRecoveryFlowResponse struct {
+	RecoveryFlow RecoveryFlow
+}
+
 // CreateOrGetRecoveryFlow handles the logic for creating or getting a recovery flow
-func CreateOrGetRecoveryFlow(ctx context.Context, h KratosRequestHeader, flowID string) (RecoveryFlow, KratosResponseHeader, KratosRequestHeader, error) {
+func CreateOrGetRecoveryFlow(ctx context.Context, r CreateOrGetRecoveryFlowRequest) (CreateOrGetRecoveryFlowResponse, KratosResponseHeader, KratosRequestHeader, error) {
 	var (
 		err              error
-		recoveryFlow     RecoveryFlow
+		response         CreateOrGetRecoveryFlowResponse
 		kratosReqHeader  KratosRequestHeader
 		kratosRespHeader KratosResponseHeader
 	)
-	if flowID == "" {
+	if r.FlowID == "" {
 		var createRecoveryFlowResp CreateRecoveryFlowResponse
 		createRecoveryFlowResp, kratosReqHeader, err = CreateRecoveryFlow(ctx, CreateRecoveryFlowRequest{
-			Header: h,
+			Header: r.Header,
 		})
 		kratosRespHeader = createRecoveryFlowResp.Header
-		recoveryFlow = createRecoveryFlowResp.RecoveryFlow
+		response.RecoveryFlow = createRecoveryFlowResp.RecoveryFlow
 	} else {
 		var getRecoveryFlowResp GetRecoveryFlowResponse
 		getRecoveryFlowResp, kratosReqHeader, err = GetRecoveryFlow(ctx, GetRecoveryFlowRequest{
-			Header: h,
-			FlowID: flowID,
+			Header: r.Header,
+			FlowID: r.FlowID,
 		})
 		kratosRespHeader = getRecoveryFlowResp.Header
-		recoveryFlow = getRecoveryFlowResp.RecoveryFlow
+		response.RecoveryFlow = getRecoveryFlowResp.RecoveryFlow
 	}
-	return recoveryFlow, kratosRespHeader, kratosReqHeader, err
+	return response, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------
@@ -1162,7 +1192,7 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 				Header: kratosReqHeaderForNext,
 			})
 			if err != nil {
-				slog.ErrorContext(ctx, "UpdateSettingsFlow GetVerificationFlow error", "err", err)
+				slog.ErrorContext(ctx, "UpdateSettingsFlow GetRecoveryFlow error", "err", err)
 				return response, kratosReqHeaderForNext, err
 			}
 			response.RecoveryFlow = &getRecoveryFlowResp.RecoveryFlow
@@ -1174,31 +1204,40 @@ func UpdateRecoveryFlow(ctx context.Context, r UpdateRecoveryFlowRequest) (Updat
 // --------------------------------------------------------------------------
 // Create or Get Settings Flow
 // --------------------------------------------------------------------------
+type CreateOrGetSettingsFlowRequest struct {
+	FlowID string
+	Header KratosRequestHeader
+}
+
+type CreateOrGetSettingsFlowResponse struct {
+	SettingsFlow SettingsFlow
+}
+
 // CreateOrGetSettingsFlow handles the logic for creating or getting a settings flow
-func CreateOrGetSettingsFlow(ctx context.Context, h KratosRequestHeader, flowID string) (SettingsFlow, KratosResponseHeader, KratosRequestHeader, error) {
+func CreateOrGetSettingsFlow(ctx context.Context, r CreateOrGetSettingsFlowRequest) (CreateOrGetSettingsFlowResponse, KratosResponseHeader, KratosRequestHeader, error) {
 	var (
 		err              error
-		settingsFlow     SettingsFlow
+		response         CreateOrGetSettingsFlowResponse
 		kratosReqHeader  KratosRequestHeader
 		kratosRespHeader KratosResponseHeader
 	)
-	if flowID == "" {
+	if r.FlowID == "" {
 		var createSettingsFlowResp CreateSettingsFlowResponse
 		createSettingsFlowResp, kratosReqHeader, err = CreateSettingsFlow(ctx, CreateSettingsFlowRequest{
-			Header: h,
+			Header: r.Header,
 		})
 		kratosRespHeader = createSettingsFlowResp.Header
-		settingsFlow = createSettingsFlowResp.SettingsFlow
+		response.SettingsFlow = createSettingsFlowResp.SettingsFlow
 	} else {
 		var getSettingsFlowResp GetSettingsFlowResponse
 		getSettingsFlowResp, kratosReqHeader, err = GetSettingsFlow(ctx, GetSettingsFlowRequest{
-			Header: h,
-			FlowID: flowID,
+			Header: r.Header,
+			FlowID: r.FlowID,
 		})
 		kratosRespHeader = getSettingsFlowResp.Header
-		settingsFlow = getSettingsFlowResp.SettingsFlow
+		response.SettingsFlow = getSettingsFlowResp.SettingsFlow
 	}
-	return settingsFlow, kratosRespHeader, kratosReqHeader, err
+	return response, kratosRespHeader, kratosReqHeader, err
 }
 
 // --------------------------------------------------------------------------

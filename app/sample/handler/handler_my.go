@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 // --------------------------------------------------------------------------
@@ -30,13 +29,13 @@ func (p *Provider) handleGetMy(w http.ResponseWriter, r *http.Request) {
 // --------------------------------------------------------------------------
 // Request parameters for handleGetMyProfile
 type getMyProfileRequestParams struct {
-	FlowID         string `validate:"omitempty,uuid4"`
-	Information    string
-	SavedEmail     string
-	SavedFirstname string
-	SavedLastname  string
-	SavedNickname  string
-	SavedBirthdate string
+	FlowID         string `form:"flow" validate:"omitempty,uuid4"`
+	Information    string `form:"information" validate:"omitempty"`
+	SavedEmail     string `form:"email" validate:"omitempty"`
+	SavedFirstname string `form:"firstname" validate:"omitempty"`
+	SavedLastname  string `form:"lastname" validate:"omitempty"`
+	SavedNickname  string `form:"nickname" validate:"omitempty"`
+	SavedBirthdate string `form:"birthdate" validate:"omitempty"`
 }
 
 // Handler GET /my/profile
@@ -44,27 +43,25 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &getMyProfileRequestParams{
-		FlowID:         r.URL.Query().Get("flow"),
-		Information:    r.URL.Query().Get("information"),
-		SavedEmail:     r.URL.Query().Get("email"),
-		SavedFirstname: r.URL.Query().Get("firstname"),
-		SavedLastname:  r.URL.Query().Get("lastname"),
-		SavedNickname:  r.URL.Query().Get("nickname"),
-		SavedBirthdate: r.URL.Query().Get("birthdate"),
-	}
-
 	// prepare views
 	profileView := newView(TPL_MY_PROFILE)
 
+	// bind and validate request parameters
+	var reqParams getMyProfileRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handleGetMyProfile bind request error", "err", err)
+		profileView.setValidationFieldError(err).render(w, r, session)
+		return
+	}
+
 	// create or get settings Flow
-	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
+	response, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, kratos.CreateOrGetSettingsFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+	})
 	if err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		profileView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "create or get settings flow error", "err", err)
+		profileView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -95,8 +92,8 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	profileView.addParams(map[string]any{
-		"SettingsFlowID": settingsFlow.FlowID,
-		"CsrfToken":      settingsFlow.CsrfToken,
+		"SettingsFlowID": response.SettingsFlow.FlowID,
+		"CsrfToken":      response.SettingsFlow.CsrfToken,
 		"Information":    reqParams.Information,
 		"Email":          email,
 		"Firstname":      firstname,
@@ -112,13 +109,13 @@ func (p *Provider) handleGetMyProfile(w http.ResponseWriter, r *http.Request) {
 // POST /my/profile
 // --------------------------------------------------------------------------
 type postMyProfileRequestParams struct {
-	FlowID    string `validate:"required,uuid4"`
-	CsrfToken string `validate:"required"`
-	Email     string `validate:"omitempty,email" ja:"メールアドレス"`
-	Firstname string `validate:"omitempty" ja:"氏名(性)"`
-	Lastname  string `validate:"omitempty" ja:"氏名(名)"`
-	Nickname  string `validate:"omitempty" ja:"ニックネーム"`
-	Birthdate string `validate:"omitempty,date" ja:"生年月日"`
+	FlowID    string `form:"flow" validate:"required,uuid4"`
+	CsrfToken string `form:"csrf_token" validate:"required"`
+	Email     string `form:"email" validate:"omitempty,email" ja:"メールアドレス"`
+	Firstname string `form:"firstname" validate:"omitempty" ja:"氏名(性)"`
+	Lastname  string `form:"lastname" validate:"omitempty" ja:"氏名(名)"`
+	Nickname  string `form:"nickname" validate:"omitempty" ja:"ニックネーム"`
+	Birthdate string `form:"birthdate" validate:"omitempty,date" ja:"生年月日"`
 }
 
 func makeTraitsForUpdateSettings(session *kratos.Session, params *postMyProfileRequestParams) kratos.Traits {
@@ -147,17 +144,6 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	session := getSession(ctx)
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
-	// get request parameters
-	reqParams := &postMyProfileRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Email:     r.PostFormValue("email"),
-		Firstname: r.PostFormValue("firstname"),
-		Lastname:  r.PostFormValue("lastname"),
-		Nickname:  r.PostFormValue("nickname"),
-		Birthdate: fmt.Sprintf("%s-%s-%s", r.PostFormValue("birthdate_year"), r.PostFormValue("birthdate_month"), r.PostFormValue("birthdate_day")),
-	}
-
 	// prepare views
 	profileFormView := newView(TPL_MY_PROFILE_FORM)
 	loginIndexView := newView(TPL_AUTH_LOGIN_INDEX)
@@ -165,12 +151,11 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 	verificationCodeView := newView(TPL_AUTH_VERIFICATION_CODE)
 	topIndexView := newView(TPL_TOP_INDEX)
 
-	// validate request parameters
-	if err := pkgVars.validate.Struct(reqParams); err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams postMyProfileRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostMyProfile bind request error", "err", err)
+		profileFormView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
 
@@ -181,7 +166,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		Body: kratos.UpdateSettingsFlowRequestBody{
 			CsrfToken: reqParams.CsrfToken,
 			Method:    "profile",
-			Traits:    makeTraitsForUpdateSettings(session, reqParams),
+			Traits:    makeTraitsForUpdateSettings(session, &reqParams),
 		},
 	})
 	if err != nil {
@@ -195,7 +180,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				Body: kratos.UpdateSettingsFlowRequestBody{
 					CsrfToken: reqParams.CsrfToken,
 					Method:    "profile",
-					Traits:    makeTraitsForUpdateSettings(session, reqParams),
+					Traits:    makeTraitsForUpdateSettings(session, &reqParams),
 				},
 			}
 
@@ -207,16 +192,14 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 					Aal:     kratos.Aal1,
 				})
 				if err != nil {
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-					}))
-					profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					slog.ErrorContext(ctx, "create login flow error", "err", err)
+					profileFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
 				// render login form
 				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				redirect(w, r, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID), []string{})
 				loginIndexView.addParams(map[string]any{
 					"LoginFlowID":           createLoginFlowResp.LoginFlow.FlowID,
 					"Information":           "プロフィール更新のために再度ログインをお願いします。",
@@ -234,10 +217,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				})
 				if err != nil {
 					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-					}))
-					profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					profileFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
@@ -254,15 +234,12 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 				})
 				if err != nil {
 					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-					}))
-					profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					profileFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
 				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				redirect(w, r, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID), []string{})
 				loginCodeView.addParams(map[string]any{
 					"LoginFlowID":           createLoginFlowResp.LoginFlow.FlowID,
 					"Information":           "プロフィール更新のために再度ログインをお願いします。",
@@ -275,10 +252,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// render form with error
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		profileFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -299,10 +273,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "get verification error", "err", err.Error())
-			baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-			}))
-			profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			profileFormView.setKratosMsg(err).render(w, r, session)
 			return
 		}
 
@@ -310,10 +281,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 			Header: makeDefaultKratosRequestHeader(r),
 		})
 		if err != nil {
-			baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-			}))
-			profileFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+			profileFormView.setKratosMsg(err).render(w, r, session)
 			return
 		}
 
@@ -334,7 +302,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 
 		// render verification code page (replace <body> tag and push url)
 		addCookies(w, getVerificationFlowResp.Header.Cookie)
-		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID))
+		redirect(w, r, fmt.Sprintf("/auth/verification/code?flow=%s", getVerificationFlowResp.VerificationFlow.FlowID), []string{})
 		verificationCodeView.addParams(map[string]any{
 			"VerificationFlowID": getVerificationFlowResp.VerificationFlow.FlowID,
 			"CsrfToken":          getVerificationFlowResp.VerificationFlow.CsrfToken,
@@ -346,7 +314,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	// render top page
 	addCookies(w, kratosResp.Header.Cookie)
-	setHeadersForReplaceBody(w, "/")
+	redirect(w, r, "/", []string{})
 	topIndexView.addParams(map[string]any{
 		"Items": items,
 	}).render(w, r, session)
@@ -356,7 +324,7 @@ func (p *Provider) handlePostMyProfile(w http.ResponseWriter, r *http.Request) {
 // GET /my/password
 // --------------------------------------------------------------------------
 type getMyPasswordRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
+	FlowID string `form:"flow" validate:"omitempty,uuid4"`
 }
 
 // Handler GET /my/password
@@ -364,21 +332,25 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &getMyPasswordRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
-
 	// prepare views
 	passwordView := newView(TPL_MY_PASSWORD)
 
+	// bind and validate request parameters
+	var reqParams getMyPasswordRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handleGetMyPassword bind request error", "err", err)
+		passwordView.setValidationFieldError(err).render(w, r, session)
+		return
+	}
+
 	// create or get settings Flow
-	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
+	response, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, kratos.CreateOrGetSettingsFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+	})
 	if err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-		}))
-		passwordView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "create or get settings flow error", "err", err)
+		passwordView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -387,8 +359,8 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 
 	// render page
 	passwordView.addParams(map[string]any{
-		"SettingsFlowID": settingsFlow.FlowID,
-		"CsrfToken":      settingsFlow.CsrfToken,
+		"SettingsFlowID": response.SettingsFlow.FlowID,
+		"CsrfToken":      response.SettingsFlow.CsrfToken,
 	}).render(w, r, session)
 }
 
@@ -396,10 +368,10 @@ func (p *Provider) handleGetMyPassword(w http.ResponseWriter, r *http.Request) {
 // POST /my/password
 // --------------------------------------------------------------------------
 type postMyPasswordRequestParams struct {
-	FlowID               string `validate:"uuid4"`
-	CsrfToken            string `validate:"required"`
-	Password             string `validate:"required" ja:"パスワード"`
-	PasswordConfirmation string `validate:"required" ja:"パスワード確認"`
+	FlowID               string `form:"flow" validate:"uuid4"`
+	CsrfToken            string `form:"csrf_token" validate:"required"`
+	Password             string `form:"password" validate:"required" ja:"パスワード"`
+	PasswordConfirmation string `form:"password_confirmation" validate:"required" ja:"パスワード確認"`
 }
 
 // Handler POST /my/password
@@ -408,36 +380,22 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 	session := getSession(ctx)
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
-	// get request parameters
-	reqParams := &postMyPasswordRequestParams{
-		FlowID:               r.URL.Query().Get("flow"),
-		CsrfToken:            r.PostFormValue("csrf_token"),
-		Password:             r.PostFormValue("password"),
-		PasswordConfirmation: r.PostFormValue("password_confirmation"),
-	}
-
 	// prepare views
 	passwordFormView := newView(TPL_MY_PASSWORD_FORM)
 	loginIndexView := newView(TPL_AUTH_LOGIN_INDEX)
 	loginCodeView := newView(TPL_AUTH_LOGIN_CODE)
 
-	// validate request parameters
-	if err := pkgVars.validate.Struct(reqParams); err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-		}))
-		passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams postMyPasswordRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostMyPassword bind request error", "err", err)
+		passwordFormView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
 
 	// validate password confirmation
 	if reqParams.Password != reqParams.PasswordConfirmation {
-		baseViewError := newViewError()
-		baseViewError.validationFieldErrors["Password"] = validationFieldError{
-			Tag:     "Password",
-			Message: "パスワードとパスワード確認が一致しません",
-		}
-		passwordFormView.addParams(baseViewError.toViewParams()).render(w, r, session)
+		passwordFormView.setValidationFieldError(fmt.Errorf("パスワードとパスワード確認が一致しません")).render(w, r, session)
 		return
 	}
 
@@ -474,16 +432,14 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 					Refresh: true,
 				})
 				if err != nil {
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-					}))
-					passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					slog.ErrorContext(ctx, "create login flow error", "err", err)
+					passwordFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
 				// render login form
 				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				redirect(w, r, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID), []string{})
 				loginIndexView.addParams(map[string]any{
 					"LoginFlowID":           createLoginFlowResp.LoginFlow.FlowID,
 					"Information":           "パスワード更新のために再度ログインをお願いします。",
@@ -501,10 +457,7 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 				})
 				if err != nil {
 					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-					}))
-					passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					passwordFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
@@ -521,15 +474,12 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 				})
 				if err != nil {
 					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-					}))
-					passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					passwordFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
 				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				redirect(w, r, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID), []string{})
 				loginCodeView.addParams(map[string]any{
 					"LoginFlowID":           createLoginFlowResp.LoginFlow.FlowID,
 					"Information":           "パスワード更新のために再度ログインをお願いします。",
@@ -542,10 +492,7 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// render form with error
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-		}))
-		passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		passwordFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -560,16 +507,13 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 		Header: makeDefaultKratosRequestHeader(r),
 	})
 	if err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PASSWORD_DEFAULT",
-		}))
-		passwordFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		passwordFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
 	// render password page
 	addCookies(w, kratosResp.Header.Cookie)
-	setHeadersForReplaceBody(w, "/my/password")
+	redirect(w, r, "/my/password", []string{})
 	passwordFormView.addParams(map[string]any{
 		"SettingsFlowID": createSettingsFlowResp.SettingsFlow.FlowID,
 		"Information":    "パスワードが設定されました。",
@@ -581,7 +525,7 @@ func (p *Provider) handlePostMyPassword(w http.ResponseWriter, r *http.Request) 
 // GET /my/totp
 // --------------------------------------------------------------------------
 type getMyTotpRequestParams struct {
-	FlowID string `validate:"omitempty,uuid4"`
+	FlowID string `form:"flow" validate:"omitempty,uuid4"`
 }
 
 // Handler GET /my/totp
@@ -589,21 +533,25 @@ func (p *Provider) handleGetMyTotp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &getMyTotpRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
-	}
-
 	// prepare views
 	totpView := newView(TPL_MY_TOTP)
 
+	// bind and validate request parameters
+	var reqParams getMyTotpRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handleGetMyTotp bind request error", "err", err)
+		totpView.setValidationFieldError(err).render(w, r, session)
+		return
+	}
+
 	// create or get settings Flow
-	settingsFlow, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
+	response, kratosResponseHeader, _, err := kratos.CreateOrGetSettingsFlow(ctx, kratos.CreateOrGetSettingsFlowRequest{
+		FlowID: reqParams.FlowID,
+		Header: makeDefaultKratosRequestHeader(r),
+	})
 	if err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		totpView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "create or get settings flow error", "err", err)
+		totpView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -612,10 +560,10 @@ func (p *Provider) handleGetMyTotp(w http.ResponseWriter, r *http.Request) {
 
 	// render page
 	totpView.addParams(map[string]any{
-		"SettingsFlowID": settingsFlow.FlowID,
-		"CsrfToken":      settingsFlow.CsrfToken,
-		"TotpQR":         "src=" + settingsFlow.TotpQR,
-		"TotpRegisted":   settingsFlow.TotpUnlink,
+		"SettingsFlowID": response.SettingsFlow.FlowID,
+		"CsrfToken":      response.SettingsFlow.CsrfToken,
+		"TotpQR":         "src=" + response.SettingsFlow.TotpQR,
+		"TotpRegisted":   response.SettingsFlow.TotpUnlink,
 	}).render(w, r, session)
 }
 
@@ -623,10 +571,10 @@ func (p *Provider) handleGetMyTotp(w http.ResponseWriter, r *http.Request) {
 // POST /my/totp
 // --------------------------------------------------------------------------
 type postMyTotpRequestParams struct {
-	FlowID     string `validate:"required,uuid4"`
-	CsrfToken  string `validate:"required"`
-	TotpCode   string `validate:"omitempty" ja:"認証コード"`
-	TotpUnlink string `validate:"omitempty"`
+	FlowID     string `form:"flow" validate:"required,uuid4"`
+	CsrfToken  string `form:"csrf_token" validate:"required"`
+	TotpCode   string `form:"totp_code" validate:"omitempty" ja:"認証コード"`
+	TotpUnlink string `form:"totp_unlink" validate:"omitempty"`
 }
 
 // Handler POST /my/totp
@@ -635,25 +583,16 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 	session := getSession(ctx)
 	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 
-	// get request parameters
-	reqParams := &postMyTotpRequestParams{
-		FlowID:     r.URL.Query().Get("flow"),
-		CsrfToken:  r.PostFormValue("csrf_token"),
-		TotpCode:   r.PostFormValue("totp_code"),
-		TotpUnlink: r.PostFormValue("totp_unlink"),
-	}
-
 	// prepare views
 	totpFormView := newView(TPL_MY_TOTP_FORM)
 	loginIndexView := newView(TPL_AUTH_LOGIN_INDEX)
 	loginCodeView := newView(TPL_AUTH_LOGIN_CODE)
 
-	// validate request parameters
-	if err := pkgVars.validate.Struct(reqParams); err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		totpFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams postMyTotpRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostMyTotp bind request error", "err", err)
+		totpFormView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
 
@@ -692,16 +631,14 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 					Refresh: true,
 				})
 				if err != nil {
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-					}))
-					totpFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					slog.ErrorContext(ctx, "create login flow error", "err", err)
+					totpFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
 				// render login form
 				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				redirect(w, r, fmt.Sprintf("/auth/login?flow=%s", createLoginFlowResp.LoginFlow.FlowID), []string{})
 				loginIndexView.addParams(map[string]any{
 					"LoginFlowID":           createLoginFlowResp.LoginFlow.FlowID,
 					"Information":           "認証アプリ設定のために再度ログインをお願いします。",
@@ -719,10 +656,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 				})
 				if err != nil {
 					slog.ErrorContext(ctx, "create login flow for aal2 error", "err", err)
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-					}))
-					totpFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					totpFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
@@ -739,15 +673,12 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 				})
 				if err != nil {
 					slog.ErrorContext(ctx, "update login flow for aal2 error", "err", err)
-					baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-					}))
-					totpFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+					totpFormView.setKratosMsg(err).render(w, r, session)
 					return
 				}
 
 				addCookies(w, createLoginFlowResp.Header.Cookie)
-				setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID))
+				redirect(w, r, fmt.Sprintf("/auth/login/code?flow=%s", createLoginFlowResp.LoginFlow.FlowID), []string{})
 				loginCodeView.addParams(map[string]any{
 					"LoginFlowID":           createLoginFlowResp.LoginFlow.FlowID,
 					"Information":           "認証アプリ更新のために再度ログインをお願いします。",
@@ -760,10 +691,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// render form with error
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		totpFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		totpFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -778,10 +706,7 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		Header: makeDefaultKratosRequestHeader(r),
 	})
 	if err != nil {
-		baseViewError := newViewError().addMessage(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ERR_SETTINGS_PROFILE_DEFAULT",
-		}))
-		totpFormView.addParams(baseViewError.extract(err).toViewParams()).render(w, r, session)
+		totpFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
 
@@ -793,38 +718,4 @@ func (p *Provider) handlePostMyTotp(w http.ResponseWriter, r *http.Request) {
 		"TotpQR":         "src=" + createSettingsFlowResp.SettingsFlow.TotpQR,
 		"TotpRegisted":   createSettingsFlowResp.SettingsFlow.TotpUnlink,
 	}).render(w, r, session)
-}
-
-func settingsView(method string, session *kratos.Session, settingsFlow kratos.SettingsFlow) *view {
-	var settingsView *view
-	if method == "profile" {
-		year, month, day := parseDate(session.Identity.Traits.Birthdate)
-		settingsView = newView(TPL_MY_PROFILE).addParams(map[string]any{
-			"SettingsFlowID": settingsFlow.FlowID,
-			"CsrfToken":      settingsFlow.CsrfToken,
-			"Email":          session.Identity.Traits.Email,
-			"Firstname":      session.Identity.Traits.Firstname,
-			"Lastname":       session.Identity.Traits.Lastname,
-			"Nickname":       session.Identity.Traits.Nickname,
-			"BirthdateYear":  year,
-			"BirthdateMonth": month,
-			"BirthdateDay":   day,
-			"Information":    "プロフィールが更新されました。",
-		})
-	} else if method == "password" {
-		settingsView = newView(TPL_MY_PASSWORD).addParams(map[string]any{
-			"SettingsTotpID": settingsFlow.FlowID,
-			"Information":    "パスワードが設定されました。",
-			"CsrfToken":      settingsFlow.CsrfToken,
-		})
-	} else if method == "totp" {
-		settingsView = newView(TPL_MY_TOTP).addParams(map[string]any{
-			"SettingsTotpID": settingsFlow.FlowID,
-			"Information":    "認証アプリが設定されました。",
-			"CsrfToken":      settingsFlow.CsrfToken,
-			"TotpQR":         "src=" + settingsFlow.TotpQR,
-			"TotpRegisted":   settingsFlow.TotpUnlink,
-		})
-	}
-	return settingsView
 }

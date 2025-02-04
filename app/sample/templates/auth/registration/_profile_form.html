@@ -2,12 +2,7 @@
 
 <form 
   id="registration-form"
-  {{ if eq .Method "profile" }}
   hx-post="/auth/registration/profile?flow={{.RegistrationFlowID}}" 
-  {{ else if eq .Method "oidc" }}
-  hx-post="/auth/registration/credential/oidc?flow={{.RegistrationFlowID}}" 
-  hx-vals='{"provider": "{{.Provider}}"}'
-  {{ end }}
   hx-swap="outerHTML" 
   hx-target="this"
 >
@@ -15,6 +10,12 @@
     name="csrf_token"
     type="hidden"
     value="{{.CsrfToken}}"
+  />
+
+  <input
+    name="provider"
+    type="hidden"
+    value="{{.Provider}}"
   />
 
   <div class="my-6">

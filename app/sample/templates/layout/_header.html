@@ -24,7 +24,7 @@
 
     <meta name="htmx-config" content='{"withCredentials":"true"}'>
   </head>
-  <body class="dark:bg-gray-900 dark:text-white">
+  <body hx-boost="true" class="dark:bg-gray-900 dark:text-white">
     <main>
       {{template "layout/_navbar.html" .}}
       <div class="container mx-auto px-4 pt-20">

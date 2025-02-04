@@ -6,8 +6,6 @@ import (
 	"net/http"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
-
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 // --------------------------------------------------------------------------
@@ -15,53 +13,70 @@ import (
 // --------------------------------------------------------------------------
 // Request parameters for handleGetAuthRecovery
 type getAuthRecoveryRequestParams struct {
-	FlowID string
+	FlowID   string `form:"flow" validate:"omitempty,uuid4"`
+	ReturnTo string `form:"return_to" validate:"omitempty"`
 }
 
 func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &getAuthRecoveryRequestParams{
-		FlowID: r.URL.Query().Get("flow"),
+	// views
+	recoveryView := newView(TPL_AUTH_RECOVERY_INDEX)
+
+	// bind and validate request parameters
+	var reqParams getAuthRecoveryRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handleGetAuthRecovery bind request error", "err", err)
+		recoveryView.setValidationFieldError(err).render(w, r, session)
+		return
 	}
 
-	// prepare views
-	recoveryView := newView(TPL_AUTH_RECOVERY_INDEX).addParams(map[string]any{
-		"RecoveryFlowID": reqParams.FlowID,
-	})
+	// add request params to views
+	recoveryView.addParams(requestParamsToMap(reqParams))
 
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	for k := range viewError.validationFieldErrors {
-		if k == "FlowID" {
-			viewError.messages = append(viewError.messages, newErrorMsg(pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "ERR_FALLBACK",
-			})))
+	var (
+		kratosRespHeader kratos.KratosResponseHeader
+		err              error
+	)
+	if reqParams.FlowID == "" {
+		var createRecoveryFlowResp kratos.CreateRecoveryFlowResponse
+		createRecoveryFlowResp, _, err = kratos.CreateRecoveryFlow(ctx, kratos.CreateRecoveryFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "create recovery flow error", "err", err)
+			recoveryView.setKratosMsg(err).render(w, r, session)
+			return
 		}
-	}
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handleGetAuthRecovery validation error", "messages", viewError.messages)
-		recoveryView.addParams(viewError.toViewParams()).render(w, r, session)
-		return
-	}
-
-	// create or get recovery Flow
-	recoveryFlow, kratosResponseHeader, _, err := kratos.CreateOrGetRecoveryFlow(ctx, makeDefaultKratosRequestHeader(r), reqParams.FlowID)
-	if err != nil {
-		recoveryView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
-		return
+		kratosRespHeader = createRecoveryFlowResp.Header
+		recoveryView.addParams(map[string]any{
+			"RecoveryFlowID": createRecoveryFlowResp.RecoveryFlow.FlowID,
+			"CsrfToken":      createRecoveryFlowResp.RecoveryFlow.CsrfToken,
+		})
+	} else {
+		var getRecoveryFlowResp kratos.GetRecoveryFlowResponse
+		getRecoveryFlowResp, _, err = kratos.GetRecoveryFlow(ctx, kratos.GetRecoveryFlowRequest{
+			Header: makeDefaultKratosRequestHeader(r),
+			FlowID: reqParams.FlowID,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "get recovery flow error", "err", err)
+			recoveryView.setKratosMsg(err).render(w, r, session)
+			return
+		}
+		kratosRespHeader = getRecoveryFlowResp.Header
+		recoveryView.addParams(map[string]any{
+			"RecoveryFlowID": getRecoveryFlowResp.RecoveryFlow.FlowID,
+			"CsrfToken":      getRecoveryFlowResp.RecoveryFlow.CsrfToken,
+		})
 	}
 
 	// add cookies to the request header
-	addCookies(w, kratosResponseHeader.Cookie)
+	addCookies(w, kratosRespHeader.Cookie)
 
 	// render page
-	recoveryView.addParams(map[string]any{
-		"RecoveryFlowID": recoveryFlow.FlowID,
-		"CsrfToken":      recoveryFlow.CsrfToken,
-	}).render(w, r, session)
+	recoveryView.render(w, r, session)
 }
 
 // --------------------------------------------------------------------------
@@ -69,36 +84,28 @@ func (p *Provider) handleGetAuthRecovery(w http.ResponseWriter, r *http.Request)
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthRecoveryEmail
 type postAuthRecoveryEmailRequestParams struct {
-	FlowID    string `validate:"uuid4"`
-	CsrfToken string `validate:"required"`
-	Email     string `validate:"required,email" ja:"メールアドレス"`
+	FlowID    string `form:"flow" validate:"uuid4"`
+	CsrfToken string `json:"csrf_token" validate:"required"`
+	Email     string `json:"email" validate:"required,email" ja:"メールアドレス"`
 }
 
 func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &postAuthRecoveryEmailRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Email:     r.PostFormValue("email"),
-	}
+	// views
+	emailFormView := newView(TPL_AUTH_RECOVERY_FORM)
 
-	// prepare views
-	emailFormView := newView(TPL_AUTH_RECOVERY_FORM).addParams(map[string]any{
-		"RecoveryFlowID": reqParams.FlowID,
-		"CsrfToken":      reqParams.CsrfToken,
-		"Email":          reqParams.Email,
-	})
-
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handlePostAuthRecoveryEmail validation error", "messages", viewError.messages)
-		emailFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams postAuthRecoveryEmailRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostAuthRecoveryEmail bind request error", "err", err)
+		emailFormView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
+
+	// add request params to views
+	emailFormView.addParams(requestParamsToMap(reqParams))
 
 	// update Recovery flow
 	kratosResp, _, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
@@ -111,24 +118,13 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 		},
 	})
 	if err != nil {
-		emailFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "update recovery flow error", "err", err)
+		emailFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
+
 	addCookies(w, kratosResp.Header.Cookie)
-
-	// リダイレクトしない形に修正
-	// if kratosResp.RedirectBrowserTo != "" {
-	// 	redirect(w, r, kratosResp.RedirectBrowserTo)
-	// 	w.WriteHeader(http.StatusOK)
-	// }
-
-	// render
-	newView(TPL_AUTH_RECOVERY_CODE_FORM).addParams(map[string]any{
-		"RecoveryFlowID":           reqParams.FlowID,
-		"CsrfToken":                reqParams.CsrfToken,
-		"Email":                    reqParams.Email,
-		"ShowRecoveryAnnouncement": true,
-	}).render(w, r, session)
+	redirect(w, r, fmt.Sprintf("/auth/recovery?flow=%s", reqParams.FlowID), []string{})
 }
 
 // --------------------------------------------------------------------------
@@ -136,42 +132,33 @@ func (p *Provider) handlePostAuthRecoveryEmail(w http.ResponseWriter, r *http.Re
 // --------------------------------------------------------------------------
 // Request parameters for handlePostAuthRecoveryCode
 type postAuthRecoveryCodeRequestParams struct {
-	FlowID    string `validate:"uuid4"`
-	CsrfToken string `validate:"required"`
-	Code      string `validate:"required,len=6,number" ja:"復旧コード"`
+	FlowID    string `form:"flow" validate:"uuid4"`
+	CsrfToken string `json:"csrf_token" validate:"required"`
+	Code      string `json:"code" validate:"required,len=6,number" ja:"復旧コード"`
 }
 
 func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	session := getSession(ctx)
 
-	// get request parameters
-	reqParams := &postAuthRecoveryCodeRequestParams{
-		FlowID:    r.URL.Query().Get("flow"),
-		CsrfToken: r.PostFormValue("csrf_token"),
-		Code:      r.PostFormValue("code"),
-	}
+	// views
+	recoveryCodeFormView := newView(TPL_AUTH_RECOVERY_CODE_FORM)
 
-	// prepare views
-	recoveryCodeFormView := newView(TPL_AUTH_RECOVERY_CODE_FORM).addParams(map[string]any{
-		"RecoveryFlowID": reqParams.FlowID,
-		"CsrfToken":      reqParams.CsrfToken,
-		"Code":           reqParams.Code,
-	})
-
-	// validate request parameters
-	viewError := newViewError().extract(pkgVars.validate.Struct(reqParams))
-	if viewError.hasError() {
-		slog.ErrorContext(ctx, "handlePostAuthRecoveryCode validation error", "messages", viewError.messages)
-		recoveryCodeFormView.addParams(viewError.toViewParams()).render(w, r, session)
+	// bind and validate request parameters
+	var reqParams postAuthRecoveryCodeRequestParams
+	if err := bindAndValidateRequest(r, &reqParams); err != nil {
+		slog.Error("handlePostAuthRecoveryCode bind request error", "err", err)
+		recoveryCodeFormView.setValidationFieldError(err).render(w, r, session)
 		return
 	}
 
+	// add request params to views
+	recoveryCodeFormView.addParams(requestParamsToMap(reqParams))
+
 	// Recovery Flow 更新
-	kratosRequestHeader := makeDefaultKratosRequestHeader(r)
 	kratosResp, _, err := kratos.UpdateRecoveryFlow(ctx, kratos.UpdateRecoveryFlowRequest{
 		FlowID: reqParams.FlowID,
-		Header: kratosRequestHeader,
+		Header: makeDefaultKratosRequestHeader(r),
 		Body: kratos.UpdateRecoveryFlowRequestBody{
 			CsrfToken: reqParams.CsrfToken,
 			Method:    "code",
@@ -179,29 +166,17 @@ func (p *Provider) handlePostAuthRecoveryCode(w http.ResponseWriter, r *http.Req
 		},
 	})
 	if err != nil {
-		recoveryCodeFormView.addParams(newViewError().extract(err).toViewParams()).render(w, r, session)
+		slog.ErrorContext(ctx, "update recovery flow error", "err", err)
+		recoveryCodeFormView.setKratosMsg(err).render(w, r, session)
 		return
 	}
-
-	addCookies(w, kratosResp.Header.Cookie)
 
 	if kratosResp.LoginFlow != nil {
 		addCookies(w, kratosResp.LoginFlowCookie)
-		setHeadersForReplaceBody(w, fmt.Sprintf("/auth/login/code?flow=%s", kratosResp.LoginFlow.FlowID))
-		newView(TPL_AUTH_LOGIN_CODE).addParams(map[string]any{
-			"LoginFlowID":    kratosResp.LoginFlow.FlowID,
-			"Information":    "パスワード更新のために再度ログインをお願いします。",
-			"CsrfToken":      kratosResp.LoginFlow.CsrfToken,
-			"Identifier":     kratosResp.LoginFlow.CodeAddress,
-			"SettingsFlowID": kratosResp.SettingsFlow.FlowID,
-		}).render(w, r, session)
-		return
+		redirectUrl := fmt.Sprintf("/auth/login/code?flow=%s&information=%s", kratosResp.LoginFlow.FlowID, "パスワード更新のために再度ログインをお願いします。")
+		redirect(w, r, redirectUrl, []string{})
+	} else {
+		addCookies(w, kratosResp.Header.Cookie)
+		redirect(w, r, fmt.Sprintf("/my/password?flow=%s", kratosResp.SettingsFlow.FlowID), []string{})
 	}
-
-	addCookies(w, kratosResp.Header.Cookie)
-	setHeadersForReplaceBody(w, fmt.Sprintf("/my/password?flow=%s", kratosResp.SettingsFlow.FlowID))
-	newView(TPL_MY_PASSWORD).addParams(map[string]any{
-		"SettingsFlowID": kratosResp.SettingsFlow.FlowID,
-		"CsrfToken":      kratosResp.SettingsFlow.CsrfToken,
-	}).render(w, r, session)
 }

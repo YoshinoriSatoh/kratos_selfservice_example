@@ -51,51 +51,51 @@ func (p *Provider) RegisterHandles(mux *http.ServeMux) *http.ServeMux {
 	}))
 
 	// Authentication Registration
-	mux.Handle("GET /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
+	mux.Handle("GET  /auth/registration", p.baseMiddleware(p.handleGetAuthRegistration))
 	mux.Handle("POST /auth/registration/profile", p.baseMiddleware(p.handlePostAuthRegistrationProfile))
+	mux.Handle("GET  /auth/registration/credential", p.baseMiddleware(p.handleGetAuthRegistrationCredential))
 	mux.Handle("POST /auth/registration/credential/password", p.baseMiddleware(p.handlePostAuthRegistrationCredentialPassword))
-	mux.Handle("POST /auth/registration/credential/oidc", p.baseMiddleware(p.handlePostAuthRegistrationCredentialOidc))
 	mux.Handle("POST /auth/registration/credential/passkey", p.baseMiddleware(p.handlePostAuthRegistrationCredentialPasskey))
 
 	// Authentication Verification
-	mux.Handle("GET /auth/verification", p.baseMiddleware(p.handleGetAuthVerification))
-	mux.Handle("GET /auth/verification/code", p.baseMiddleware(p.handleGetAuthVerificationCode))
+	mux.Handle("GET  /auth/verification", p.baseMiddleware(p.handleGetAuthVerification))
 	mux.Handle("POST /auth/verification/email", p.baseMiddleware(p.handlePostAuthVerificationEmail))
+	mux.Handle("GET  /auth/verification/code", p.baseMiddleware(p.handleGetAuthVerificationCode))
 	mux.Handle("POST /auth/verification/code", p.baseMiddleware(p.handlePostAuthVerificationCode))
 
 	// Authentication Login
-	mux.Handle("GET /auth/login", p.baseMiddleware(p.handleGetAuthLogin))
+	mux.Handle("GET  /auth/login", p.baseMiddleware(p.handleGetAuthLogin))
 	mux.Handle("POST /auth/login/password", p.baseMiddleware(p.handlePostAuthLoginPassword))
 	mux.Handle("POST /auth/login/passkey", p.baseMiddleware(p.handlePostAuthLoginPasskey))
 	mux.Handle("POST /auth/login/oidc", p.baseMiddleware(p.handlePostAuthLoginOidc))
-	mux.Handle("GET /auth/login/code", p.baseMiddleware(p.handleGetAuthLoginCode))
+	mux.Handle("GET  /auth/login/code", p.baseMiddleware(p.handleGetAuthLoginCode))
 	mux.Handle("POST /auth/login/code", p.baseMiddleware(p.handlePostAuthLoginCode))
-	mux.Handle("GET /auth/login/totp", p.baseMiddleware(p.handleGetAuthLoginTotp))
+	mux.Handle("GET  /auth/login/totp", p.baseMiddleware(p.handleGetAuthLoginTotp))
 	mux.Handle("POST /auth/login/totp", p.baseMiddleware(p.handlePostAuthLoginTotp))
 
 	// Authentication Logout
 	mux.Handle("POST /auth/logout", p.baseMiddleware(p.handlePostAuthLogout))
 
 	// Authentication Recovery
-	mux.Handle("GET /auth/recovery", p.baseMiddleware(p.handleGetAuthRecovery))
+	mux.Handle("GET  /auth/recovery", p.baseMiddleware(p.handleGetAuthRecovery))
 	mux.Handle("POST /auth/recovery/email", p.baseMiddleware(p.handlePostAuthRecoveryEmail))
 	mux.Handle("POST /auth/recovery/code", p.baseMiddleware(p.handlePostAuthRecoveryCode))
 
 	// My
-	mux.Handle("GET /my", p.baseMiddleware(p.handleGetMy))
-	mux.Handle("GET /my/password", p.baseMiddleware(p.handleGetMyPassword))
+	mux.Handle("GET  /my", p.baseMiddleware(p.handleGetMy))
+	mux.Handle("GET  /my/password", p.baseMiddleware(p.handleGetMyPassword))
 	mux.Handle("POST /my/password", p.baseMiddleware(p.handlePostMyPassword))
-	mux.Handle("GET /my/profile", p.baseMiddleware(p.handleGetMyProfile))
+	mux.Handle("GET  /my/profile", p.baseMiddleware(p.handleGetMyProfile))
 	mux.Handle("POST /my/profile", p.baseMiddleware(p.handlePostMyProfile))
-	mux.Handle("GET /my/totp", p.baseMiddleware(p.handleGetMyTotp))
+	mux.Handle("GET  /my/totp", p.baseMiddleware(p.handleGetMyTotp))
 	mux.Handle("POST /my/totp", p.baseMiddleware(p.handlePostMyTotp))
 
 	// Top
 	mux.Handle("GET /{$}", p.baseMiddleware(p.handleGetTop))
 
 	// Item
-	mux.Handle("GET /item/{id}", p.baseMiddleware(p.handleGetItem))
-	mux.Handle("GET /item/{id}/purchase", p.baseMiddleware(p.handleGetItemPurchase))
+	mux.Handle("GET  /item/{id}", p.baseMiddleware(p.handleGetItem))
+	mux.Handle("GET  /item/{id}/purchase", p.baseMiddleware(p.handleGetItemPurchase))
 	mux.Handle("POST /item/{id}/purchase", p.baseMiddleware(p.handlePostItemPurchase))
 
 	// SMS
@@ -148,8 +148,7 @@ func (p *Provider) fetchSession(next http.Handler) http.Handler {
 
 		if kratos.SessionRequiredAal == kratos.Aal2 && err != nil && err.(kratos.ErrorGeneric).Err.ID == "session_aal2_required" &&
 			r.URL.Path != "/auth/login/code" && r.URL.Path != "/auth/login/totp" && r.Method != "POST" {
-			setHeadersForReplaceBody(w, "/auth/login/mfa")
-			newView("auth/login/mfa.html").render(w, r, nil)
+			redirect(w, r, "/auth/login/mfa", []string{})
 			return
 		}
 
@@ -169,15 +168,4 @@ func (p *Provider) fetchSession(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 
 	})
-}
-
-func makeDefaultKratosRequestHeader(r *http.Request) kratos.KratosRequestHeader {
-	var cookies []string
-	for _, v := range r.Cookies() {
-		cookies = append(cookies, v.String())
-	}
-	return kratos.KratosRequestHeader{
-		Cookie:   cookies,
-		ClientIP: r.RemoteAddr,
-	}
 }

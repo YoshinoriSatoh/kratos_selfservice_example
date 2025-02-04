@@ -13,10 +13,75 @@ import (
 	"strings"
 
 	"github.com/YoshinoriSatoh/kratos_example/kratos"
-
 	"github.com/go-playground/validator/v10"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
+
+const (
+	// Auth login
+	TPL_AUTH_LOGIN_INDEX         = "auth/login/index.html"
+	TPL_AUTH_LOGIN_PASSWORD_FORM = "auth/login/_password_form.html"
+	TPL_AUTH_LOGIN_PASSKEY_FORM  = "auth/login/_passkey_form.html"
+	TPL_AUTH_LOGIN_TOTP_FORM     = "auth/login/_totp_form.html"
+	TPL_AUTH_LOGIN_CODE          = "auth/login/code.html"
+	TPL_AUTH_LOGIN_CODE_FORM     = "auth/login/_code_form.html"
+	TPL_AUTH_LOGIN_MFA           = "auth/login/mfa.html"
+	TPL_AUTH_LOGIN_TOTP          = "auth/login/totp.html"
+
+	// Auth recovery
+	TPL_AUTH_RECOVERY_INDEX     = "auth/recovery/index.html"
+	TPL_AUTH_RECOVERY_CODE      = "auth/recovery/code.html"
+	TPL_AUTH_RECOVERY_FORM      = "auth/recovery/_form.html"
+	TPL_AUTH_RECOVERY_CODE_FORM = "auth/recovery/_code_form.html"
+
+	// Auth registration
+	TPL_AUTH_REGISTRATION_INDEX                    = "auth/registration/index.html"
+	TPL_AUTH_REGISTRATION_PROFILE_FORM             = "auth/registration/_profile_form.html"
+	TPL_AUTH_REGISTRATION_CREDENTIAL               = "auth/registration/credential.html"
+	TPL_AUTH_REGISTRATION_CREDENTIAL_PASSWORD_FORM = "auth/registration/_credential_password_form.html"
+	TPL_AUTH_REGISTRATION_CREDENTIAL_PASSKEY_FORM  = "auth/registration/_credential_passkey_form.html"
+
+	// Auth verification
+	TPL_AUTH_VERIFICATION_INDEX     = "auth/verification/index.html"
+	TPL_AUTH_VERIFICATION_FORM      = "auth/verification/_form.html"
+	TPL_AUTH_VERIFICATION_CODE      = "auth/verification/code.html"
+	TPL_AUTH_VERIFICATION_CODE_FORM = "auth/verification/_code_form.html"
+
+	// My pages
+	TPL_MY_INDEX         = "my/index.html"
+	TPL_MY_PROFILE       = "my/profile.html"
+	TPL_MY_PROFILE_FORM  = "my/_profile_form.html"
+	TPL_MY_PASSWORD      = "my/password.html"
+	TPL_MY_PASSWORD_FORM = "my/_password_form.html"
+	TPL_MY_TOTP          = "my/totp.html"
+	TPL_MY_TOTP_FORM     = "my/_totp_form.html"
+
+	// Top pages
+	TPL_TOP_INDEX = "top/index.html"
+
+	// Item
+	TPL_ITEM_DETAIL                = "item/detail.html"
+	TPL_ITEM_PURCHASE              = "item/purchase.html"
+	TPL_ITEM_PURCHASE_CONFIRM      = "item/_purchase_confirm.html"
+	TPL_ITEM_PURCHASE_COMPLETE     = "item/_purchase_complete.html"
+	TPL_ITEM_PURCHASE_WITHOUT_AUTH = "item/_purchase_without_auth.html"
+)
+
+// ---------------------- msg ----------------------
+
+type MsgType string
+
+const (
+	MSG_TYPE_SUCCESS = MsgType("success")
+	MSG_TYPE_INFO    = MsgType("info")
+	MSG_TYPE_WARNING = MsgType("warning")
+	MSG_TYPE_ERROR   = MsgType("error")
+)
+
+type msg struct {
+	MsgType MsgType
+	Message string
+}
 
 // ---------------------- view ----------------------
 type view struct {
@@ -53,6 +118,15 @@ func (v *view) addParams(p map[string]any) *view {
 	return v
 }
 
+func (v *view) addMessage(msg string) *view {
+	messages := v.Params["Messages"]
+	messages = append(messages.([]string), msg)
+	maps.Copy(v.Params, map[string]any{
+		"Messages": messages,
+	})
+	return v
+}
+
 func (v *view) toQueryParam() string {
 	jsonStr, err := json.Marshal(*v)
 	if err != nil {
@@ -77,58 +151,21 @@ func addCookies(w http.ResponseWriter, cookie []string) {
 	}
 }
 
-func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
-	w.Header().Set("HX-Push-Url", pushUrl)
-	w.Header().Set("HX-Retarget", "body")
-	w.Header().Set("HX-Reswap", "innerHTML")
+// func setHeadersForReplaceBody(w http.ResponseWriter, pushUrl string) {
+// 	w.Header().Set("HX-Push-Url", pushUrl)
+// 	w.Header().Set("HX-Retarget", "body")
+// 	w.Header().Set("HX-Reswap", "innerHTML")
+// }
+
+type validationFieldError struct {
+	Tag     string
+	Message string
 }
 
-// ---------------------- viewError ----------------------
-type viewError struct {
-	validationFieldErrors map[string]validationFieldError
-	messages              []msg
-}
-
-func (ve *viewError) hasError() bool {
-	return len(ve.validationFieldErrors) > 0 || len(ve.messages) > 0
-}
-
-func (ve *viewError) toViewParams() map[string]any {
-	return map[string]any{
-		"ValidationFieldError": ve.validationFieldErrors,
-		"Messages":             ve.messages,
-	}
-}
-
-func newViewError() *viewError {
-	return &viewError{
-		validationFieldErrors: map[string]validationFieldError{},
-		messages:              []msg{},
-	}
-}
-
-func (ve *viewError) addMessage(message string) *viewError {
-	ve.messages = append(ve.messages, msg{
-		MsgType: MSG_TYPE_ERROR,
-		Message: message,
-	})
-	return ve
-}
-
-func (ve *viewError) setMessages(messages []string) *viewError {
-	for _, v := range messages {
-		ve.messages = append(ve.messages, msg{
-			MsgType: MSG_TYPE_ERROR,
-			Message: v,
-		})
-	}
-	return ve
-}
-
-func (ve *viewError) extract(err error) *viewError {
+func (v *view) setValidationFieldError(err error) *view {
 	var validastionErrors validator.ValidationErrors
 	if errors.As(err, &validastionErrors) {
-		fieldsErrors := make(map[string]validationFieldError)
+		fieldsErrors := make(map[string]any)
 		for _, err := range err.(validator.ValidationErrors) {
 			var msg string
 			if err.ActualTag() == "date" {
@@ -141,56 +178,60 @@ func (ve *viewError) extract(err error) *viewError {
 				Message: msg,
 			}
 		}
-		return &viewError{
-			validationFieldErrors: fieldsErrors,
-			messages:              []msg{},
-		}
+		v.addParams(map[string]any{
+			"ValidationFieldError": fieldsErrors,
+		})
 	}
+	return v
+}
 
+func (v *view) setKratosMsg(err error) *view {
 	var genericError kratos.GenericError
+	var messages []msg
+
 	if errors.As(err, &genericError) {
-		return kratosGenericErrorToViewError(err.(kratos.GenericError))
+		messages = []msg{kratosGenericErrorMessage(err.(kratos.ErrorGeneric).Err)}
 	}
 
 	var errorGeneric kratos.ErrorGeneric
 	if errors.As(err, &errorGeneric) {
-		return kratosGenericErrorToViewError(err.(kratos.ErrorGeneric).Err)
+		messages = []msg{kratosGenericErrorMessage(err.(kratos.ErrorGeneric).Err)}
 	}
 
 	var errorBrowserLocationChangeRequired kratos.ErrorBrowserLocationChangeRequired
 	if errors.As(err, &errorBrowserLocationChangeRequired) {
-		return kratosGenericErrorToViewError(err.(kratos.ErrorBrowserLocationChangeRequired).Err)
+		messages = []msg{kratosGenericErrorMessage(err.(kratos.ErrorBrowserLocationChangeRequired).Err)}
 	}
 
 	var kratosErrorUiMessages kratos.ErrorUiMessages
 	if errors.As(err, &kratosErrorUiMessages) {
-		return kratosUiMessagesToViewError(err.(kratos.ErrorUiMessages))
+		messages = kratosUiMessages(err.(kratos.ErrorUiMessages))
 	}
 
-	return &viewError{}
+	v.addParams(map[string]any{
+		"Messages": messages,
+	})
+
+	return v
 }
 
-func kratosGenericErrorToViewError(genericError kratos.GenericError) *viewError {
+func kratosGenericErrorMessage(genericError kratos.GenericError) msg {
 	message, err := pkgVars.loc.Localize(&i18n.LocalizeConfig{
 		MessageID: fmt.Sprintf("ERR_KRATOS_%s", strings.ToUpper(genericError.ID)),
 	})
 	if err != nil {
 		slog.Error("kratosGenericErrorToViewError", "LocalizeError", err)
-		message, _ := pkgVars.loc.Localize(&i18n.LocalizeConfig{
+		message, _ = pkgVars.loc.Localize(&i18n.LocalizeConfig{
 			MessageID: "ERR_FALLBACK",
 		})
-		return &viewError{
-			validationFieldErrors: map[string]validationFieldError{},
-			messages:              []msg{newErrorMsg(message)},
-		}
 	}
-	return &viewError{
-		validationFieldErrors: map[string]validationFieldError{},
-		messages:              []msg{newErrorMsg(message)},
+	return msg{
+		MsgType: MSG_TYPE_ERROR,
+		Message: message,
 	}
 }
 
-func kratosUiMessagesToViewError(uiMessages kratos.ErrorUiMessages) *viewError {
+func kratosUiMessages(uiMessages kratos.ErrorUiMessages) []msg {
 	var messages []msg
 	for _, v := range uiMessages {
 		message, err := pkgVars.loc.Localize(&i18n.LocalizeConfig{
@@ -203,94 +244,56 @@ func kratosUiMessagesToViewError(uiMessages kratos.ErrorUiMessages) *viewError {
 				MessageID:    "ERR_FALLBACK",
 				TemplateData: v.Context,
 			})
-			messages = append(messages, newErrorMsg(message))
+			messages = append(messages, msg{
+				MsgType: MSG_TYPE_ERROR,
+				Message: message,
+			})
 			continue
 		}
-		messages = append(messages, newErrorMsg(message))
+		messages = append(messages, msg{
+			MsgType: MSG_TYPE_ERROR,
+			Message: message,
+		})
 	}
 
-	return &viewError{
-		validationFieldErrors: map[string]validationFieldError{},
-		messages:              messages,
+	return messages
+}
+
+func redirect(w http.ResponseWriter, r *http.Request, redirectUrl string, excludeQueriesInPushUrl []string) {
+	// Parse the redirect URL
+	parsedURL, err := url.Parse(redirectUrl)
+	if err != nil {
+		slog.Error("Failed to parse redirect URL", "error", err)
+		return
 	}
-}
 
-// ---------------------- validationFieldError(s) ----------------------
-type validationFieldError struct {
-	Tag     string
-	Message string
-}
+	// Get query parameters
+	queryParams := parsedURL.Query()
+	pushUrl := parsedURL.Path
 
-// type validationFieldErrors map[string]validationFieldError
-
-// func (e *validationFieldErrors) toViewParams() map[string]any {
-// 	return map[string]any{
-// 		"ValidationFieldError": e,
-// 	}
-// }
-
-// ---------------------- msg ----------------------
-
-type MsgType string
-
-const (
-	MSG_TYPE_SUCCESS = MsgType("success")
-	MSG_TYPE_INFO    = MsgType("info")
-	MSG_TYPE_WARNING = MsgType("warning")
-	MSG_TYPE_ERROR   = MsgType("error")
-)
-
-type msg struct {
-	MsgType MsgType
-	Message string
-}
-
-func newErrorSuccess(message string) msg {
-	return msg{
-		MsgType: MSG_TYPE_SUCCESS,
-		Message: "",
-	}
-}
-
-func newErrorInfo(message string) msg {
-	return msg{
-		MsgType: MSG_TYPE_INFO,
-		Message: "",
-	}
-}
-
-func newErrorWarning(message string) msg {
-	return msg{
-		MsgType: MSG_TYPE_WARNING,
-		Message: "",
-	}
-}
-
-func newErrorMsg(message string) msg {
-	return msg{
-		MsgType: MSG_TYPE_ERROR,
-		Message: message,
-		// Message: pkgVars.loc.MustLocalize(&i18n.LocalizeConfig{
-		// 	MessageID: "ERR_FALLBACK",
-		// }),
-	}
-}
-
-func redirect(w http.ResponseWriter, r *http.Request, redirectTo string, query map[string]string) {
-	if len(query) > 0 {
-		q := make(url.Values)
-		for k, v := range query {
-			q.Add(k, v)
+	// Build push URL without excluded queries
+	if len(queryParams) > 0 {
+		filteredQuery := make(url.Values)
+		for key, values := range queryParams {
+			// Check if the query parameter should be excluded
+			shouldExclude := false
+			for _, excludeKey := range excludeQueriesInPushUrl {
+				if key == excludeKey {
+					shouldExclude = true
+					break
+				}
+			}
+			if !shouldExclude {
+				filteredQuery[key] = values
+			}
 		}
-		redirectTo = fmt.Sprintf("%s?%s", redirectTo, q.Encode())
+
+		// Add filtered query parameters to push URL if any exist
+		if len(filteredQuery) > 0 {
+			pushUrl = fmt.Sprintf("%s?%s", pushUrl, filteredQuery.Encode())
+		}
 	}
-	if r.Header.Get("HX-Request") == "true" {
-		slog.Info("HX-Redirect")
-		w.Header().Set("HX-Redirect", redirectTo)
-		// w.Header().Set("HX-Location", redirectTo)
-		// w.WriteHeader(http.StatusSeeOther)
-	} else {
-		slog.Info("Redirect")
-		http.Redirect(w, r, redirectTo, http.StatusSeeOther)
-	}
+
+	w.Header().Set("HX-Push-Url", pushUrl)
+	w.Header().Set("HX-Redirect", redirectUrl)
 }
